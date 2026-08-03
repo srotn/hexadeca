@@ -75,15 +75,15 @@ def test_equal_final_scores_have_no_winner() -> None:
     assert result.winner is None
 
 
-def test_nearest_layer_majority_awards_its_full_colour_count() -> None:
-    """A two-Black versus one-White nearest layer gives Black two points."""
+def test_nearest_layer_majority_assigns_one_point_to_its_colour() -> None:
+    """A two-Black versus one-White layer makes the cell worth one Black point."""
 
     board = _board_with_moves([(6, 8), (8, 10), (10, 8)])
 
     result = score_cell(board, encode_action(8, 8, board.size))
 
     assert result.owner is Player.BLACK
-    assert result.points == 2
+    assert result.points == 1
     assert result.decisive_distance_squared == 4
 
 
@@ -123,7 +123,7 @@ def test_score_cell_rejects_invalid_action() -> None:
     [
         ("distance_metric", "manhattan"),
         ("tie_break", "neutral-on-first-tie"),
-        ("majority_award", "one-point"),
+        ("majority_award", "majority-count"),
         ("score_occupied_cells", False),
     ],
 )
@@ -156,6 +156,8 @@ def test_terminal_score_matches_independent_reference_for_every_cell() -> None:
     assert result.cell_scores == expected_cells
     assert len(result.cell_scores) == board.action_size
     assert result.total_score == sum(cell.points for cell in result.cell_scores)
+    assert result.total_score <= board.action_size
+    assert all(cell.points in {0, 1} for cell in result.cell_scores)
     assert (board.cells, board.history, board.zobrist_hash) == state_before
 
     for move in board.history:
@@ -204,16 +206,12 @@ def _reference_score(
             black_count = players.count(Player.BLACK)
             white_count = players.count(Player.WHITE)
             if black_count > white_count:
-                cell_score = CellScore(
-                    action, Player.BLACK, black_count, distance_squared
-                )
-                black_score += black_count
+                cell_score = CellScore(action, Player.BLACK, 1, distance_squared)
+                black_score += 1
                 break
             if white_count > black_count:
-                cell_score = CellScore(
-                    action, Player.WHITE, white_count, distance_squared
-                )
-                white_score += white_count
+                cell_score = CellScore(action, Player.WHITE, 1, distance_squared)
+                white_score += 1
                 break
         cell_scores.append(cell_score)
 

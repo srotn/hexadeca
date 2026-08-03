@@ -17,12 +17,13 @@ def test_default_config_matches_confirmed_project_parameters() -> None:
     assert config.project.config_schema_version == 6
     assert config.rules.board_size == 16
     assert config.rules.score_occupied_cells is True
+    assert config.rules.majority_award == "one-point"
     assert config.rules.action_size == 256
     assert config.rules.zobrist_seed == 7_640_891_576_956_012_809
     assert config.network.input_planes == 16
     assert config.network.residual_blocks == 10
     assert config.network.channels == 128
-    assert config.network.score_normalizer == 16_384.0
+    assert config.network.score_normalizer == 256.0
     assert config.network.policy_size == 256
     assert config.mcts.training_simulations == 800
     assert config.mcts.evaluation_simulations == 1600

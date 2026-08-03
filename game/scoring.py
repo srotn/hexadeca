@@ -112,14 +112,14 @@ def _score_cell(
             return CellScore(
                 action=action,
                 owner=Player.BLACK,
-                points=black_count,
+                points=1,
                 decisive_distance_squared=distance_squared,
             )
         if white_count > black_count:
             return CellScore(
                 action=action,
                 owner=Player.WHITE,
-                points=white_count,
+                points=1,
                 decisive_distance_squared=distance_squared,
             )
 
@@ -155,7 +155,7 @@ def _validate_scoring_rules(rules: RulesConfig) -> None:
     expected_values = {
         "distance_metric": (rules.distance_metric, "squared-euclidean"),
         "tie_break": (rules.tie_break, "next-distance-layer"),
-        "majority_award": (rules.majority_award, "majority-count"),
+        "majority_award": (rules.majority_award, "one-point"),
     }
     for field_name, (actual, expected) in expected_values.items():
         if actual != expected:

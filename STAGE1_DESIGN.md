@@ -70,16 +70,15 @@ For every board cell `x`, form distance layers from all placed stones:
    order.
 3. For the first group whose Black count `B` differs from its White count
    `W`:
-   - if `B > W`, add `B` points to Black;
-   - if `W > B`, add `W` points to White.
+   - if `B > W`, the cell belongs to Black and adds one point to Black;
+   - if `W > B`, the cell belongs to White and adds one point to White.
 4. If `B == W`, inspect the next distance layer.
 5. If all layers have equal Black and White counts, the point gives neither
    player a score.
 
 The initial layer normally contains one nearest stone and therefore awards one
-point. The multiplicity rule is important: if a nearest layer has two Black
-stones and one White stone, the forbidden point contributes **two** points to
-Black, not one.
+point. A decisive layer determines only the owner of the cell: if it has two
+Black stones and one White stone, the cell contributes one point to Black.
 
 The final result is the sum of all board-cell contributions. Black wins
 when `black_score > white_score`; White wins when the reverse is true; equal
@@ -93,8 +92,8 @@ scores are a draw. This rule is immutable within a ruleset version.
 - A position with no legal cell is terminal even if its next player has never
   placed a stone.
 - A forbidden point with a unique nearest Black stone awards one Black point.
-- A closest layer containing two Black stones and one White stone awards two
-  Black points.
+- A closest layer containing two Black stones and one White stone assigns the
+  cell to Black and awards one Black point.
 - Equal-colour-count closest layers are skipped before considering a farther
   layer.
 - A point whose every layer has equal Black and White counts awards zero.
@@ -107,12 +106,9 @@ The repository currently contains only `Hexadeca.html`; it is an untracked
 prototype. Its visual style, board interaction, player controls, training tab,
 and HTTP/SSE integration shape are assets to preserve in Stage 13.
 
-Its present JavaScript must not be used as a game-rule authority. In
-particular, its `cv()` function correctly considers every board cell, including
-occupied cells, but awards one point to a side rather than the required count
-of majority-colour stones in the decisive distance layer. Its displayed result
-therefore still conflicts with the canonical rules above. Stage 13 will make
-only targeted UI changes so displayed authoritative data comes from the
+Its present JavaScript must not be used as a game-rule authority. Stage 13 will
+validate its scoring and tie-break behaviour against the canonical backend and
+make only targeted UI changes so displayed authoritative data comes from the
 backend. Any live territory rendering before terminal status will be labelled
 and treated as a non-authoritative preview, not an official score.
 
@@ -220,9 +216,9 @@ heads:
   in the loss and in MCTS before normalization; the model itself always emits
   256 logits.
 - **Score:** Black-score and White-score predictions. Training retains raw
-  final scores for reporting and predicts scores normalized by the conservative
-  ruleset bound `board_cells * maximum_stones` (16,384 for the current
-  ruleset). The normalizer is checkpoint metadata, not an implicit constant.
+  final scores for reporting and predicts scores normalized by the ruleset
+  bound of 256 cells. The normalizer is checkpoint metadata, not an implicit
+  constant.
 - **Outcome:** a scalar probability that the player in the input state wins.
   Targets are 1.0 for a win, 0.0 for a loss, and 0.5 for a final draw. MCTS
   converts it to current-player value `2 * probability - 1`.

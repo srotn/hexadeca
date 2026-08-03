@@ -342,7 +342,7 @@ def _build_rules(raw: Mapping[str, Any]) -> RulesConfig:
         distance_metric=_choice(raw, "distance_metric", "rules", {"squared-euclidean"}),
         score_occupied_cells=_bool(raw, "score_occupied_cells", "rules"),
         tie_break=_choice(raw, "tie_break", "rules", {"next-distance-layer"}),
-        majority_award=_choice(raw, "majority_award", "rules", {"majority-count"}),
+        majority_award=_choice(raw, "majority_award", "rules", {"one-point"}),
         zobrist_seed=_nonnegative_int(raw, "zobrist_seed", "rules"),
     )
     return rules

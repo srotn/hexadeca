@@ -11,7 +11,7 @@ starting_player = "black"
 distance_metric = "squared-euclidean"
 score_occupied_cells = true
 tie_break = "next-distance-layer"
-majority_award = "majority-count"
+majority_award = "one-point"
 zobrist_seed = 7640891576956012809
 
 [network]
@@ -23,7 +23,7 @@ policy_head_channels = 2
 value_head_channels = 1
 value_hidden_features = 256
 policy_size = 256
-score_normalizer = 16384.0
+score_normalizer = 256.0
 batch_norm_epsilon = 0.00001
 batch_norm_momentum = 0.1
 
