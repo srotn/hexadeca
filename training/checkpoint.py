@@ -333,6 +333,12 @@ class CheckpointManager:
                 f"Failed to publish checkpoint alias: {alias}"
             ) from error
 
+    def has_alias(self, alias: str) -> bool:
+        """Return whether an alias pointer exists without masking corruption."""
+
+        validated = _validate_alias(alias)
+        return (self._aliases_directory / f"{validated}.json").is_file()
+
     def resolve_identifier(self, identifier: str) -> str:
         """Resolve a supported alias or validate an immutable checkpoint ID."""
 

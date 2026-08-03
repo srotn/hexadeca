@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, TypeVar
 
 _T = TypeVar("_T")
-CONFIG_SCHEMA_VERSION = 6
+CONFIG_SCHEMA_VERSION = 7
 
 
 class SchemaError(ValueError):
@@ -150,6 +150,36 @@ class TrainingConfig:
 
 
 @dataclass(frozen=True)
+class EvaluationConfig:
+    """Paired candidate-versus-best Arena and rating controls."""
+
+    game_count: int
+    opening_plies: int
+    paired_colors: bool
+    promotion_score: float
+    draw_score: float
+    promotion_confidence_lower_bound: float
+    confidence_level: float
+    bootstrap_samples: int
+    elo_scale: float
+    elo_prior_points: float
+    worker_processes: int
+    worker_torch_threads: int
+    inference_max_batch_size: int
+    inference_batch_wait_seconds: float
+    inference_response_timeout_seconds: float
+    worker_shutdown_timeout_seconds: float
+    amp_enabled: bool
+    random_seed: int
+
+    @property
+    def opening_pair_count(self) -> int:
+        """Return the number of openings implied by paired games."""
+
+        return self.game_count // 2
+
+
+@dataclass(frozen=True)
 class BenchmarkConfig:
     """Reproducible benchmark settings for implemented project stages."""
 
@@ -175,6 +205,8 @@ class BenchmarkConfig:
     self_play_benchmark_simulations: int
     trainer_benchmark_warmup_batches: int
     trainer_benchmark_measurement_batches: int
+    evaluation_benchmark_games: int
+    evaluation_benchmark_simulations: int
     random_seed: int
 
 
@@ -186,6 +218,7 @@ class PathsConfig:
     checkpoint_directory: Path
     log_directory: Path
     benchmark_directory: Path
+    evaluation_directory: Path
 
 
 @dataclass(frozen=True)
@@ -209,6 +242,7 @@ class AppConfig:
     replay: ReplayConfig
     self_play: SelfPlayConfig
     training: TrainingConfig
+    evaluation: EvaluationConfig
     benchmark: BenchmarkConfig
     paths: PathsConfig
     logging: LoggingConfig
@@ -227,6 +261,7 @@ def build_config(raw: Mapping[str, Any]) -> AppConfig:
             "replay",
             "self_play",
             "training",
+            "evaluation",
             "benchmark",
             "paths",
             "logging",
@@ -240,6 +275,7 @@ def build_config(raw: Mapping[str, Any]) -> AppConfig:
     replay = _build_replay(_section(raw, "replay"))
     self_play = _build_self_play(_section(raw, "self_play"))
     training = _build_training(_section(raw, "training"))
+    evaluation = _build_evaluation(_section(raw, "evaluation"))
     benchmark = _build_benchmark(_section(raw, "benchmark"))
     paths = _build_paths(_section(raw, "paths"))
     logging = _build_logging(_section(raw, "logging"))
@@ -288,6 +324,24 @@ def build_config(raw: Mapping[str, Any]) -> AppConfig:
         raise SchemaError(
             "self_play.inference_max_batch_size must be at least the MCTS batch size"
         )
+    if evaluation.inference_max_batch_size < mcts.max_inference_batch_size:
+        raise SchemaError(
+            "evaluation.inference_max_batch_size must be at least the MCTS batch size"
+        )
+    if evaluation.game_count % 2 != 0:
+        raise SchemaError("evaluation.game_count must be even for paired colors")
+    if not evaluation.paired_colors:
+        raise SchemaError("Only paired-color Arena evaluation is supported")
+    if evaluation.opening_plies >= rules.action_size:
+        raise SchemaError("evaluation.opening_plies must be less than the action size")
+    if evaluation.opening_pair_count > rules.action_size:
+        raise SchemaError(
+            "evaluation opening pairs must not exceed the initial legal actions"
+        )
+    if evaluation.promotion_confidence_lower_bound >= evaluation.promotion_score:
+        raise SchemaError(
+            "evaluation confidence lower bound must be less than promotion_score"
+        )
     return AppConfig(
         project=project,
         rules=rules,
@@ -296,6 +350,7 @@ def build_config(raw: Mapping[str, Any]) -> AppConfig:
         replay=replay,
         self_play=self_play,
         training=training,
+        evaluation=evaluation,
         benchmark=benchmark,
         paths=paths,
         logging=logging,
@@ -591,6 +646,88 @@ def _build_training(raw: Mapping[str, Any]) -> TrainingConfig:
     )
 
 
+def _build_evaluation(raw: Mapping[str, Any]) -> EvaluationConfig:
+    _reject_unknown(
+        raw,
+        {
+            "game_count",
+            "opening_plies",
+            "paired_colors",
+            "promotion_score",
+            "draw_score",
+            "promotion_confidence_lower_bound",
+            "confidence_level",
+            "bootstrap_samples",
+            "elo_scale",
+            "elo_prior_points",
+            "worker_processes",
+            "worker_torch_threads",
+            "inference_max_batch_size",
+            "inference_batch_wait_seconds",
+            "inference_response_timeout_seconds",
+            "worker_shutdown_timeout_seconds",
+            "amp_enabled",
+            "random_seed",
+        },
+        "evaluation",
+    )
+    evaluation = EvaluationConfig(
+        game_count=_positive_int(raw, "game_count", "evaluation"),
+        opening_plies=_positive_int(raw, "opening_plies", "evaluation"),
+        paired_colors=_bool(raw, "paired_colors", "evaluation"),
+        promotion_score=_bounded_float(
+            raw,
+            "promotion_score",
+            "evaluation",
+            lower_bound=0.5,
+            upper_bound=1.0,
+        ),
+        draw_score=_bounded_float(
+            raw,
+            "draw_score",
+            "evaluation",
+            lower_bound=0.0,
+            upper_bound=1.0,
+        ),
+        promotion_confidence_lower_bound=_bounded_float(
+            raw,
+            "promotion_confidence_lower_bound",
+            "evaluation",
+            lower_bound=0.0,
+            upper_bound=1.0,
+        ),
+        confidence_level=_bounded_float(
+            raw,
+            "confidence_level",
+            "evaluation",
+            lower_bound=0.5,
+            upper_bound=1.0,
+        ),
+        bootstrap_samples=_positive_int(raw, "bootstrap_samples", "evaluation"),
+        elo_scale=_positive_float(raw, "elo_scale", "evaluation"),
+        elo_prior_points=_positive_float(raw, "elo_prior_points", "evaluation"),
+        worker_processes=_positive_int(raw, "worker_processes", "evaluation"),
+        worker_torch_threads=_positive_int(raw, "worker_torch_threads", "evaluation"),
+        inference_max_batch_size=_positive_int(
+            raw, "inference_max_batch_size", "evaluation"
+        ),
+        inference_batch_wait_seconds=_positive_float(
+            raw, "inference_batch_wait_seconds", "evaluation"
+        ),
+        inference_response_timeout_seconds=_positive_float(
+            raw, "inference_response_timeout_seconds", "evaluation"
+        ),
+        worker_shutdown_timeout_seconds=_positive_float(
+            raw, "worker_shutdown_timeout_seconds", "evaluation"
+        ),
+        amp_enabled=_bool(raw, "amp_enabled", "evaluation"),
+        random_seed=_nonnegative_int(raw, "random_seed", "evaluation"),
+    )
+    if evaluation.draw_score != 0.5:
+        raise SchemaError("evaluation.draw_score must be 0.5")
+    return evaluation
+
+
 def _build_benchmark(raw: Mapping[str, Any]) -> BenchmarkConfig:
     _reject_unknown(
         raw,
@@ -617,6 +754,8 @@ def _build_benchmark(raw: Mapping[str, Any]) -> BenchmarkConfig:
             "self_play_benchmark_simulations",
             "trainer_benchmark_warmup_batches",
             "trainer_benchmark_measurement_batches",
+            "evaluation_benchmark_games",
+            "evaluation_benchmark_simulations",
             "random_seed",
         },
         "benchmark",
@@ -686,6 +825,12 @@ def _build_benchmark(raw: Mapping[str, Any]) -> BenchmarkConfig:
         trainer_benchmark_measurement_batches=_positive_int(
             raw, "trainer_benchmark_measurement_batches", "benchmark"
         ),
+        evaluation_benchmark_games=_positive_int(
+            raw, "evaluation_benchmark_games", "benchmark"
+        ),
+        evaluation_benchmark_simulations=_positive_int(
+            raw, "evaluation_benchmark_simulations", "benchmark"
+        ),
         random_seed=_nonnegative_int(raw, "random_seed", "benchmark"),
     )
 
@@ -698,6 +843,7 @@ def _build_paths(raw: Mapping[str, Any]) -> PathsConfig:
             "checkpoint_directory",
             "log_directory",
             "benchmark_directory",
+            "evaluation_directory",
         },
         "paths",
     )
@@ -706,6 +852,7 @@ def _build_paths(raw: Mapping[str, Any]) -> PathsConfig:
         checkpoint_directory=_relative_path(raw, "checkpoint_directory", "paths"),
         log_directory=_relative_path(raw, "log_directory", "paths"),
         benchmark_directory=_relative_path(raw, "benchmark_directory", "paths"),
+        evaluation_directory=_relative_path(raw, "evaluation_directory", "paths"),
     )
 
 

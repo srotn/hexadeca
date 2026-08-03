@@ -1,6 +1,6 @@
 [project]
 name = "hexadeca-alpha-zero"
-config_schema_version = 6
+config_schema_version = 7
 
 [rules]
 ruleset_id = "hexadeca-v1"
@@ -97,6 +97,26 @@ win_loss_weight = 1.0
 black_score_loss_weight = 1.0
 white_score_loss_weight = 1.0
 
+[evaluation]
+game_count = 100
+opening_plies = 2
+paired_colors = true
+promotion_score = 0.55
+draw_score = 0.5
+promotion_confidence_lower_bound = 0.5
+confidence_level = 0.95
+bootstrap_samples = 10000
+elo_scale = 400.0
+elo_prior_points = 0.5
+worker_processes = 4
+worker_torch_threads = 1
+inference_max_batch_size = 256
+inference_batch_wait_seconds = 0.002
+inference_response_timeout_seconds = 120.0
+worker_shutdown_timeout_seconds = 10.0
+amp_enabled = true
+random_seed = 20260803
+
 [benchmark]
 board_warmup_iterations = 1000
 board_measurement_iterations = 10000
@@ -120,6 +140,8 @@ self_play_benchmark_games = 4
 self_play_benchmark_simulations = 64
 trainer_benchmark_warmup_batches = 3
 trainer_benchmark_measurement_batches = 10
+evaluation_benchmark_games = 4
+evaluation_benchmark_simulations = 32
 random_seed = 20260803
 
 [paths]
@@ -127,6 +149,7 @@ run_directory = "runs"
 checkpoint_directory = "checkpoints"
 log_directory = "logs"
 benchmark_directory = "benchmark-results"
+evaluation_directory = "evaluation-results"
 
 [logging]
 level = "INFO"

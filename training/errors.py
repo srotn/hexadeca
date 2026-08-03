@@ -59,3 +59,35 @@ class TrainerStateError(TrainerError):
 
 class TrainerStepError(TrainerError):
     """Raised when a model update cannot complete safely."""
+
+
+class ArenaError(TrainingInfrastructureError):
+    """Base error for candidate-versus-best Arena evaluation."""
+
+
+class ArenaValidationError(ArenaError, ValueError):
+    """Raised when an Arena request or completed game violates its contract."""
+
+
+class ArenaInferenceError(ArenaError):
+    """Raised when centralized dual-model inference cannot serve a worker."""
+
+
+class ArenaWorkerError(ArenaError):
+    """Raised when an Arena worker fails or cannot shut down cleanly."""
+
+
+class EvaluationError(TrainingInfrastructureError):
+    """Base error for rating, reporting, and checkpoint promotion."""
+
+
+class EvaluationStatisticsError(EvaluationError, ValueError):
+    """Raised when Arena outcomes cannot produce valid rating statistics."""
+
+
+class EvaluationReportError(EvaluationError):
+    """Raised when a versioned evaluation report cannot be published."""
+
+
+class EvaluationGateError(EvaluationError):
+    """Raised when checkpoint comparison or promotion cannot complete safely."""

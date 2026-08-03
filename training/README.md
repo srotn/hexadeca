@@ -9,6 +9,46 @@ then `Trainer` takes an immutable snapshot for one training iteration. This
 prevents mutable Replay writes or inference-mode ownership from racing model
 updates.
 
+Stage 11 adds candidate-versus-best Arena evaluation. It does not make game
+rules or model quality decisions in the frontend: the authoritative engine,
+MCTS, terminal scorer, statistics, checkpoint gate, and report writer all
+remain backend components.
+
+## Arena evaluation
+
+The configured 100 games are derived from 50 unique legal opening prefixes.
+Each prefix is played twice with candidate and incumbent colors exchanged.
+Openings are generated from the configured seed, have distinct first actions,
+and are stored verbatim in the report. After the forced two-ply prefix, both
+models use evaluation MCTS with 1,600 simulations, no root noise, and zero
+temperature.
+
+`ArenaCoordinator` uses spawn workers for isolated game and tree ownership.
+The main process exclusively owns both models, groups inference requests by
+candidate or best role, and batches each model independently. A worker,
+inference, replay-validation, or shutdown failure returns no partial Arena.
+
+Wins, draws, and losses give the candidate 1, 0.5, and 0 match points. The 95%
+interval resamples complete two-game opening pairs with 10,000 deterministic
+bootstrap samples. Performance Elo uses the configured logistic scale and a
+symmetric half-point prior so all-win and all-loss results remain finite. A
+candidate is promoted only when its score is at least 55% and the paired
+confidence lower bound is greater than 50%.
+
+## Evaluation reports
+
+`CheckpointEvaluationGate` fully loads the first candidate before initializing
+the `best` alias. Later candidates are compared to the resolved immutable best
+checkpoint. The complete report is published through an atomic directory
+rename before an accepted candidate updates `best`; matching report publication
+is idempotent so a pointer-update interruption can be retried. Existing corrupt
+or identity-mismatched reports are never silently reused.
+
+Each report records checkpoint provenance, exact MCTS and Arena configuration,
+all openings, color assignments, action histories, official scores, per-game
+simulation counts, aggregate inference counters, paired confidence bounds,
+performance Elo, and the promotion decision.
+
 ## Trainer
 
 One training iteration performs exactly the configured number of optimizer
@@ -117,5 +157,7 @@ and PyTorch CPU/CUDA RNG state. Loading verifies metadata compatibility and the
 checksum before using PyTorch's restricted `weights_only` loader. Alias files
 are atomically replaced and never overwrite immutable bundle history.
 
-Candidate-versus-best promotion and checkpoint retention policy begin in Stage
-11; Stage 10 publishes only the immutable `latest` training lineage.
+Stage 10 publishes the immutable `latest` training lineage. Stage 11 validates
+the first best model and changes `best` only through the audited evaluation
+gate. Checkpoint retention beyond immutable bundle history remains a later
+operational policy.

@@ -14,7 +14,7 @@ def test_default_config_matches_confirmed_project_parameters() -> None:
 
     config = load_config()
 
-    assert config.project.config_schema_version == 6
+    assert config.project.config_schema_version == 7
     assert config.rules.board_size == 16
     assert config.rules.score_occupied_cells is True
     assert config.rules.majority_award == "one-point"
@@ -82,6 +82,20 @@ def test_default_config_matches_confirmed_project_parameters() -> None:
     assert config.training.tensorboard_max_queue == 10
     assert config.training.random_seed == 20_260_803
     assert config.training.policy_loss_weight == 1.0
+    assert config.evaluation.game_count == 100
+    assert config.evaluation.opening_pair_count == 50
+    assert config.evaluation.opening_plies == 2
+    assert config.evaluation.paired_colors is True
+    assert config.evaluation.promotion_score == 0.55
+    assert config.evaluation.draw_score == 0.5
+    assert config.evaluation.promotion_confidence_lower_bound == 0.5
+    assert config.evaluation.confidence_level == 0.95
+    assert config.evaluation.bootstrap_samples == 10_000
+    assert config.evaluation.elo_scale == 400.0
+    assert config.evaluation.elo_prior_points == 0.5
+    assert config.evaluation.worker_processes == 4
+    assert config.evaluation.inference_max_batch_size == 256
+    assert config.evaluation.amp_enabled is True
     assert config.benchmark.board_measurement_iterations == 10_000
     assert config.benchmark.scoring_measurement_iterations == 1_000
     assert config.benchmark.environment_measurement_iterations == 1_000
@@ -95,6 +109,9 @@ def test_default_config_matches_confirmed_project_parameters() -> None:
     assert config.benchmark.self_play_benchmark_simulations == 64
     assert config.benchmark.trainer_benchmark_warmup_batches == 3
     assert config.benchmark.trainer_benchmark_measurement_batches == 10
+    assert config.benchmark.evaluation_benchmark_games == 4
+    assert config.benchmark.evaluation_benchmark_simulations == 32
+    assert config.paths.evaluation_directory.as_posix() == "evaluation-results"
 
 
 def test_profile_and_overrides_are_applied_in_precedence_order(
@@ -261,6 +278,31 @@ def test_invalid_trainer_parameters_are_rejected(
     override: dict[str, object], message: str
 ) -> None:
     """Optimizer, scheduler, AMP, logging, and lifecycle controls are validated."""
+
+    with pytest.raises(ConfigError, match=message):
+        load_config(overrides=override)
+
+
+@pytest.mark.parametrize(
+    ("override", "message"),
+    [
+        ({"evaluation.game_count": 99}, "must be even"),
+        ({"evaluation.game_count": 514}, "opening pairs"),
+        ({"evaluation.opening_plies": 256}, "less than the action size"),
+        ({"evaluation.paired_colors": False}, "paired-color"),
+        ({"evaluation.draw_score": 0.25}, "must be 0.5"),
+        (
+            {"evaluation.promotion_confidence_lower_bound": 0.55},
+            "less than promotion_score",
+        ),
+        ({"evaluation.inference_max_batch_size": 31}, "MCTS batch size"),
+        ({"evaluation.bootstrap_samples": 0}, "greater than zero"),
+    ],
+)
+def test_invalid_evaluation_parameters_are_rejected(
+    override: dict[str, object], message: str
+) -> None:
+    """Arena pairing, confidence, and batching constraints fail at load time."""
 
     with pytest.raises(ConfigError, match=message):
         load_config(overrides=override)

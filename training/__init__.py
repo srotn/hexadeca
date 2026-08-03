@@ -1,5 +1,17 @@
 """Replay, data-loading, and checkpoint infrastructure for AlphaZero training."""
 
+from training.arena import (
+    ARENA_SCHEMA_VERSION,
+    ArenaBatch,
+    ArenaCoordinator,
+    ArenaGame,
+    ArenaModel,
+    ArenaOpening,
+    ArenaProgress,
+    ArenaProgressCallback,
+    generate_openings,
+    play_arena_game,
+)
 from training.checkpoint import (
     CHECKPOINT_SCHEMA_VERSION,
     CheckpointManager,
@@ -9,8 +21,16 @@ from training.checkpoint import (
 )
 from training.data import ReplayBatch, ReplayCollator, build_replay_data_loader
 from training.errors import (
+    ArenaError,
+    ArenaInferenceError,
+    ArenaValidationError,
+    ArenaWorkerError,
     CheckpointCompatibilityError,
     CheckpointError,
+    EvaluationError,
+    EvaluationGateError,
+    EvaluationReportError,
+    EvaluationStatisticsError,
     ReplayDataLoaderError,
     ReplayError,
     ReplayPersistenceError,
@@ -24,6 +44,19 @@ from training.errors import (
     TrainerStateError,
     TrainerStepError,
     TrainingInfrastructureError,
+)
+from training.evaluation import (
+    EVALUATION_REPORT_SCHEMA_VERSION,
+    CheckpointEvaluationGate,
+    EvaluationDecision,
+    EvaluationOutcome,
+    EvaluationReportStore,
+)
+from training.rating import (
+    ArenaStatistics,
+    calculate_arena_statistics,
+    paired_bootstrap_interval,
+    performance_elo,
 )
 from training.replay import (
     REPLAY_SAMPLE_SCHEMA_VERSION,
@@ -59,15 +92,37 @@ from training.trainer import (
 )
 
 __all__ = [
+    "ARENA_SCHEMA_VERSION",
     "CHECKPOINT_SCHEMA_VERSION",
+    "EVALUATION_REPORT_SCHEMA_VERSION",
     "REPLAY_SAMPLE_SCHEMA_VERSION",
     "REPLAY_STORE_SCHEMA_VERSION",
     "SELF_PLAY_SCHEMA_VERSION",
+    "ArenaBatch",
+    "ArenaCoordinator",
+    "ArenaError",
+    "ArenaGame",
+    "ArenaInferenceError",
+    "ArenaModel",
+    "ArenaOpening",
+    "ArenaProgress",
+    "ArenaProgressCallback",
+    "ArenaStatistics",
+    "ArenaValidationError",
+    "ArenaWorkerError",
     "BatchCallback",
     "CheckpointCompatibilityError",
     "CheckpointError",
+    "CheckpointEvaluationGate",
     "CheckpointManager",
     "CheckpointMetadata",
+    "EvaluationDecision",
+    "EvaluationError",
+    "EvaluationGateError",
+    "EvaluationOutcome",
+    "EvaluationReportError",
+    "EvaluationReportStore",
+    "EvaluationStatisticsError",
     "MetricSink",
     "MetricValue",
     "ProgressCallback",
@@ -103,7 +158,12 @@ __all__ = [
     "build_optimizer",
     "build_replay_data_loader",
     "build_scheduler",
+    "calculate_arena_statistics",
     "derive_game_seed",
+    "generate_openings",
+    "paired_bootstrap_interval",
+    "performance_elo",
+    "play_arena_game",
     "play_self_play_game",
     "warmup_cosine_multiplier",
 ]

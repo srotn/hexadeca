@@ -303,6 +303,21 @@ JSON manifest and a checksummed PyTorch tensor-state file loaded with
 `best` for candidates accepted by the later evaluation gate. Bundle history is
 never overwritten by alias publication.
 
+### 5.6 Arena evaluation and Elo
+
+Candidate-versus-best evaluation uses 100 games formed from 50 deterministic,
+unique legal opening prefixes. Every opening is played twice with colors
+exchanged. Post-opening moves use 1,600 evaluation simulations, no Dirichlet
+noise, and zero temperature. Wins, draws, and losses count as 1, 0.5, and 0.
+
+Uncertainty is calculated by seeded bootstrap resampling of complete opening
+pairs. The candidate is promoted only when its score is at least 55% and the
+95% interval lower bound is greater than 50%. Pairwise performance Elo uses a
+logistic scale of 400 and a symmetric half-point prior, avoiding order-dependent
+K-factor updates and infinite ratings. The first fully validated checkpoint
+initializes `best`; all later best changes require an immutable evaluation
+report and an atomic alias update.
+
 ## 6. Configuration, observability, and reproducibility
 
 Configuration is layered: immutable ruleset, repository defaults, named run
@@ -449,7 +464,5 @@ is runnable and its required checks pass.
 The following choices are intentionally not guessed. They are not blockers for
 the Stage 1 design, but must be decided before their implementation stages:
 
-1. Candidate-versus-best promotion threshold, arena game count, and Elo policy
-   (before Stage 11).
-2. Deployment domain/TLS provider and authentication mechanism (before Stage
+1. Deployment domain/TLS provider and authentication mechanism (before Stage
    13).

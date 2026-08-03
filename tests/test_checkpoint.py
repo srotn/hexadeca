@@ -100,6 +100,7 @@ def test_checkpoint_round_trip_restores_training_and_rng_state(
         assert torch.equal(parameter, expected_parameters[name])
 
     manager.publish_alias("best", restored.checkpoint_id)
+    assert manager.has_alias("best") is True
     assert manager.read_metadata("best") == restored
     assert manager.list_checkpoint_ids() == ("iteration-000007",)
     manifest = json.loads(

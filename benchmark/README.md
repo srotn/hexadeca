@@ -72,6 +72,19 @@ the scheduler. TensorBoard, checkpoint I/O, and data collation are excluded
 from the timed optimizer scope. CUDA FP16 AMP is selected when available; use
 `--cpu-only` for float32 CPU training.
 
+Run the Stage 11 paired candidate-versus-best Arena benchmark:
+
+```powershell
+.\.venv\Scripts\python -m benchmark.evaluation
+```
+
+The benchmark loads two identical full ResNets to establish a neutral baseline,
+generates color-swapped opening pairs, runs multiprocess evaluation MCTS, and
+times the complete Arena lifecycle. It reports games and simulations per
+second plus centralized inference positions and actual batch sizes. The
+benchmark uses a reduced configured game/search budget; production promotion
+retains 100 games and 1,600 simulations per searched move.
+
 Applicable warm-up, measurement, position, game, simulation, and random-seed
 settings come from the merged project configuration. The commands write
 machine-readable reports to the configured benchmark-results directory.
