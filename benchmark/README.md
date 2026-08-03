@@ -18,6 +18,16 @@ Run the Stage 5 full-environment replay benchmark:
 .\.venv\Scripts\python -m benchmark.environment
 ```
 
+Run the Stage 6 CPU/CUDA policy-value inference benchmark:
+
+```powershell
+.\.venv\Scripts\python -m benchmark.network
+```
+
+Use `--cpu-only` on hosts without a configured CUDA runtime. The network
+report distinguishes batch calls per second from positions per second and
+records PyTorch, CUDA, device, architecture, precision, and batch size.
+
 Warm-up count, measurement count, position depth, and random seed come from the
 merged project configuration. The commands write machine-readable reports to
 the configured benchmark-results directory.

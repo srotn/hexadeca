@@ -19,14 +19,19 @@ def test_default_config_matches_confirmed_project_parameters() -> None:
     assert config.rules.action_size == 256
     assert config.rules.zobrist_seed == 7_640_891_576_956_012_809
     assert config.network.input_planes == 16
+    assert config.network.residual_blocks == 10
+    assert config.network.channels == 128
+    assert config.network.score_normalizer == 16_384.0
     assert config.network.policy_size == 256
     assert config.mcts.training_simulations == 800
     assert config.mcts.evaluation_simulations == 1600
     assert config.replay.capacity_positions == 200_000
     assert config.training.batch_size == 256
+    assert config.training.policy_loss_weight == 1.0
     assert config.benchmark.board_measurement_iterations == 10_000
     assert config.benchmark.scoring_measurement_iterations == 1_000
     assert config.benchmark.environment_measurement_iterations == 1_000
+    assert config.benchmark.network_gpu_batch_sizes == (1, 32, 256)
 
 
 def test_profile_and_overrides_are_applied_in_precedence_order(
@@ -64,3 +69,17 @@ def test_incompatible_ruleset_dimensions_are_rejected() -> None:
 
     with pytest.raises(ConfigError, match="policy_size"):
         load_config(overrides={"rules.board_size": 15})
+
+
+def test_all_training_objectives_cannot_be_disabled() -> None:
+    """A valid training config must retain at least one learned objective."""
+
+    with pytest.raises(ConfigError, match="At least one training loss"):
+        load_config(
+            overrides={
+                "training.policy_loss_weight": 0.0,
+                "training.win_loss_weight": 0.0,
+                "training.black_score_loss_weight": 0.0,
+                "training.white_score_loss_weight": 0.0,
+            }
+        )

@@ -19,7 +19,13 @@ feature_schema_id = "hexadeca-v1-16p"
 input_planes = 16
 residual_blocks = 10
 channels = 128
+policy_head_channels = 2
+value_head_channels = 1
+value_hidden_features = 256
 policy_size = 256
+score_normalizer = 16384.0
+batch_norm_epsilon = 0.00001
+batch_norm_momentum = 0.1
 
 [mcts]
 training_simulations = 800
@@ -35,6 +41,10 @@ capacity_positions = 200000
 optimizer = "adamw"
 learning_rate = 0.0003
 batch_size = 256
+policy_loss_weight = 1.0
+win_loss_weight = 1.0
+black_score_loss_weight = 1.0
+white_score_loss_weight = 1.0
 
 [benchmark]
 board_warmup_iterations = 1000
@@ -44,6 +54,10 @@ scoring_warmup_iterations = 100
 scoring_measurement_iterations = 1000
 environment_warmup_iterations = 100
 environment_measurement_iterations = 1000
+network_warmup_iterations = 3
+network_measurement_iterations = 10
+network_cpu_batch_size = 1
+network_gpu_batch_sizes = [1, 32, 256]
 random_seed = 20260803
 
 [paths]

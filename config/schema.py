@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from math import isfinite
 from pathlib import Path
 from typing import Any, TypeVar
 
@@ -52,7 +53,13 @@ class NetworkConfig:
     input_planes: int
     residual_blocks: int
     channels: int
+    policy_head_channels: int
+    value_head_channels: int
+    value_hidden_features: int
     policy_size: int
+    score_normalizer: float
+    batch_norm_epsilon: float
+    batch_norm_momentum: float
 
 
 @dataclass(frozen=True)
@@ -80,6 +87,10 @@ class TrainingConfig:
     optimizer: str
     learning_rate: float
     batch_size: int
+    policy_loss_weight: float
+    win_loss_weight: float
+    black_score_loss_weight: float
+    white_score_loss_weight: float
 
 
 @dataclass(frozen=True)
@@ -93,6 +104,10 @@ class BenchmarkConfig:
     scoring_measurement_iterations: int
     environment_warmup_iterations: int
     environment_measurement_iterations: int
+    network_warmup_iterations: int
+    network_measurement_iterations: int
+    network_cpu_batch_size: int
+    network_gpu_batch_sizes: tuple[int, ...]
     random_seed: int
 
 
@@ -163,6 +178,16 @@ def build_config(raw: Mapping[str, Any]) -> AppConfig:
         raise SchemaError(
             "network.policy_size must equal board_size squared for the active ruleset"
         )
+    if not any(
+        weight > 0
+        for weight in (
+            training.policy_loss_weight,
+            training.win_loss_weight,
+            training.black_score_loss_weight,
+            training.white_score_loss_weight,
+        )
+    ):
+        raise SchemaError("At least one training loss weight must be positive")
     return AppConfig(
         project=project,
         rules=rules,
@@ -224,7 +249,13 @@ def _build_network(raw: Mapping[str, Any]) -> NetworkConfig:
             "input_planes",
             "residual_blocks",
             "channels",
+            "policy_head_channels",
+            "value_head_channels",
+            "value_hidden_features",
             "policy_size",
+            "score_normalizer",
+            "batch_norm_epsilon",
+            "batch_norm_momentum",
         },
         "network",
     )
@@ -233,7 +264,19 @@ def _build_network(raw: Mapping[str, Any]) -> NetworkConfig:
         input_planes=_positive_int(raw, "input_planes", "network"),
         residual_blocks=_positive_int(raw, "residual_blocks", "network"),
         channels=_positive_int(raw, "channels", "network"),
+        policy_head_channels=_positive_int(raw, "policy_head_channels", "network"),
+        value_head_channels=_positive_int(raw, "value_head_channels", "network"),
+        value_hidden_features=_positive_int(raw, "value_hidden_features", "network"),
         policy_size=_positive_int(raw, "policy_size", "network"),
+        score_normalizer=_positive_float(raw, "score_normalizer", "network"),
+        batch_norm_epsilon=_positive_float(raw, "batch_norm_epsilon", "network"),
+        batch_norm_momentum=_bounded_float(
+            raw,
+            "batch_norm_momentum",
+            "network",
+            lower_bound=0.0,
+            upper_bound=1.0,
+        ),
     )
     return network
 
@@ -267,11 +310,31 @@ def _build_replay(raw: Mapping[str, Any]) -> ReplayConfig:
 
 
 def _build_training(raw: Mapping[str, Any]) -> TrainingConfig:
-    _reject_unknown(raw, {"optimizer", "learning_rate", "batch_size"}, "training")
+    _reject_unknown(
+        raw,
+        {
+            "optimizer",
+            "learning_rate",
+            "batch_size",
+            "policy_loss_weight",
+            "win_loss_weight",
+            "black_score_loss_weight",
+            "white_score_loss_weight",
+        },
+        "training",
+    )
     return TrainingConfig(
         optimizer=_choice(raw, "optimizer", "training", {"adamw"}),
         learning_rate=_positive_float(raw, "learning_rate", "training"),
         batch_size=_positive_int(raw, "batch_size", "training"),
+        policy_loss_weight=_nonnegative_float(raw, "policy_loss_weight", "training"),
+        win_loss_weight=_nonnegative_float(raw, "win_loss_weight", "training"),
+        black_score_loss_weight=_nonnegative_float(
+            raw, "black_score_loss_weight", "training"
+        ),
+        white_score_loss_weight=_nonnegative_float(
+            raw, "white_score_loss_weight", "training"
+        ),
     )
 
 
@@ -286,6 +349,10 @@ def _build_benchmark(raw: Mapping[str, Any]) -> BenchmarkConfig:
             "scoring_measurement_iterations",
             "environment_warmup_iterations",
             "environment_measurement_iterations",
+            "network_warmup_iterations",
+            "network_measurement_iterations",
+            "network_cpu_batch_size",
+            "network_gpu_batch_sizes",
             "random_seed",
         },
         "benchmark",
@@ -309,6 +376,18 @@ def _build_benchmark(raw: Mapping[str, Any]) -> BenchmarkConfig:
         ),
         environment_measurement_iterations=_positive_int(
             raw, "environment_measurement_iterations", "benchmark"
+        ),
+        network_warmup_iterations=_nonnegative_int(
+            raw, "network_warmup_iterations", "benchmark"
+        ),
+        network_measurement_iterations=_positive_int(
+            raw, "network_measurement_iterations", "benchmark"
+        ),
+        network_cpu_batch_size=_positive_int(
+            raw, "network_cpu_batch_size", "benchmark"
+        ),
+        network_gpu_batch_sizes=_positive_int_tuple(
+            raw, "network_gpu_batch_sizes", "benchmark"
         ),
         random_seed=_nonnegative_int(raw, "random_seed", "benchmark"),
     )
@@ -408,9 +487,47 @@ def _integer(raw: Mapping[str, Any], key: str, path: str) -> int:
 
 def _positive_float(raw: Mapping[str, Any], key: str, path: str) -> float:
     value = _value(raw, key, path)
-    if type(value) not in {int, float} or value <= 0:
+    if type(value) not in {int, float} or not isfinite(value) or value <= 0:
         raise SchemaError(f"{path}.{key} must be a positive number")
     return float(value)
+
+
+def _nonnegative_float(raw: Mapping[str, Any], key: str, path: str) -> float:
+    value = _value(raw, key, path)
+    if type(value) not in {int, float} or not isfinite(value) or value < 0:
+        raise SchemaError(f"{path}.{key} must be a nonnegative number")
+    return float(value)
+
+
+def _bounded_float(
+    raw: Mapping[str, Any],
+    key: str,
+    path: str,
+    *,
+    lower_bound: float,
+    upper_bound: float,
+) -> float:
+    value = _value(raw, key, path)
+    if (
+        type(value) not in {int, float}
+        or not isfinite(value)
+        or not lower_bound < value <= upper_bound
+    ):
+        raise SchemaError(
+            f"{path}.{key} must be greater than {lower_bound} and at most {upper_bound}"
+        )
+    return float(value)
+
+
+def _positive_int_tuple(raw: Mapping[str, Any], key: str, path: str) -> tuple[int, ...]:
+    value = _value(raw, key, path)
+    if not isinstance(value, list) or not value:
+        raise SchemaError(f"{path}.{key} must be a non-empty array")
+    if any(type(item) is not int or item <= 0 for item in value):
+        raise SchemaError(f"{path}.{key} values must be positive integers")
+    if len(set(value)) != len(value):
+        raise SchemaError(f"{path}.{key} values must be unique")
+    return tuple(value)
 
 
 def _choice(raw: Mapping[str, Any], key: str, path: str, choices: set[str]) -> str:

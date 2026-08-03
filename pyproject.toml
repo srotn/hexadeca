@@ -8,7 +8,9 @@ version = "0.1.0"
 description = "A staged AlphaZero implementation for the Hexadeca board game."
 readme = "README.md"
 requires-python = ">=3.11,<3.14"
-dependencies = []
+dependencies = [
+  "torch>=2.7,<3",
+]
 
 [project.optional-dependencies]
 dev = [
@@ -19,7 +21,7 @@ dev = [
 ]
 
 [tool.setuptools.packages.find]
-include = ["benchmark*", "config*", "game*", "utils*"]
+include = ["benchmark*", "config*", "game*", "network*", "utils*"]
 
 [tool.setuptools.package-data]
 config = ["*.toml"]
@@ -36,10 +38,10 @@ target-version = "py311"
 select = ["E", "F", "I", "N", "B", "UP", "SIM", "RUF"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["benchmark", "config", "game", "utils"]
+known-first-party = ["benchmark", "config", "game", "network", "utils"]
 
 [tool.mypy]
 python_version = "3.11"
 strict = true
-files = ["benchmark", "config", "game", "utils"]
+files = ["benchmark", "config", "game", "network", "utils"]
 warn_unused_configs = true
