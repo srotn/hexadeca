@@ -1,0 +1,48 @@
+[project]
+name = "hexadeca-alpha-zero"
+config_schema_version = 1
+
+[rules]
+ruleset_id = "hexadeca-v1"
+board_size = 16
+neighborhood_radius = 1
+action_encoding = "row-major"
+starting_player = "black"
+distance_metric = "squared-euclidean"
+score_occupied_cells = true
+tie_break = "next-distance-layer"
+majority_award = "majority-count"
+
+[network]
+feature_schema_id = "hexadeca-v1-16p"
+input_planes = 16
+residual_blocks = 10
+channels = 128
+policy_size = 256
+
+[mcts]
+training_simulations = 800
+evaluation_simulations = 1600
+c_puct = 2.3
+dirichlet_alpha = 0.15
+stochastic_plies = 15
+
+[replay]
+capacity_positions = 200000
+
+[training]
+optimizer = "adamw"
+learning_rate = 0.0003
+batch_size = 256
+
+[paths]
+run_directory = "runs"
+checkpoint_directory = "checkpoints"
+log_directory = "logs"
+benchmark_directory = "benchmark-results"
+
+[logging]
+level = "INFO"
+console_enabled = true
+file_enabled = true
+file_name = "application.jsonl"

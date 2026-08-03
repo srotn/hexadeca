@@ -1,0 +1,45 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hexadeca-alpha-zero"
+version = "0.1.0"
+description = "A staged AlphaZero implementation for the Hexadeca board game."
+readme = "README.md"
+requires-python = ">=3.11,<3.14"
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+  "build>=1.2,<2",
+  "mypy>=1.15,<2",
+  "pytest>=8.3,<9",
+  "ruff>=0.9,<1",
+]
+
+[tool.setuptools.packages.find]
+include = ["config*", "utils*"]
+
+[tool.setuptools.package-data]
+config = ["*.toml"]
+
+[tool.pytest.ini_options]
+addopts = "-ra"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "B", "UP", "SIM", "RUF"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["config", "utils"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+files = ["config", "utils"]
+warn_unused_configs = true
