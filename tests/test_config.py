@@ -17,12 +17,14 @@ def test_default_config_matches_confirmed_project_parameters() -> None:
     assert config.rules.board_size == 16
     assert config.rules.score_occupied_cells is True
     assert config.rules.action_size == 256
+    assert config.rules.zobrist_seed == 7_640_891_576_956_012_809
     assert config.network.input_planes == 16
     assert config.network.policy_size == 256
     assert config.mcts.training_simulations == 800
     assert config.mcts.evaluation_simulations == 1600
     assert config.replay.capacity_positions == 200_000
     assert config.training.batch_size == 256
+    assert config.benchmark.board_measurement_iterations == 10_000
 
 
 def test_profile_and_overrides_are_applied_in_precedence_order(

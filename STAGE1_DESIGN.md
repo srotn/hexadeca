@@ -81,7 +81,7 @@ point. The multiplicity rule is important: if a nearest layer has two Black
 stones and one White stone, the forbidden point contributes **two** points to
 Black, not one.
 
-The final result is the sum of all forbidden-point contributions. Black wins
+The final result is the sum of all board-cell contributions. Black wins
 when `black_score > white_score`; White wins when the reverse is true; equal
 scores are a draw. This rule is immutable within a ruleset version.
 

@@ -19,7 +19,7 @@ dev = [
 ]
 
 [tool.setuptools.packages.find]
-include = ["config*", "utils*"]
+include = ["benchmark*", "config*", "game*", "utils*"]
 
 [tool.setuptools.package-data]
 config = ["*.toml"]
@@ -36,10 +36,10 @@ target-version = "py311"
 select = ["E", "F", "I", "N", "B", "UP", "SIM", "RUF"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["config", "utils"]
+known-first-party = ["benchmark", "config", "game", "utils"]
 
 [tool.mypy]
 python_version = "3.11"
 strict = true
-files = ["config", "utils"]
+files = ["benchmark", "config", "game", "utils"]
 warn_unused_configs = true

@@ -35,6 +35,7 @@ class RulesConfig:
     score_occupied_cells: bool
     tie_break: str
     majority_award: str
+    zobrist_seed: int
 
     @property
     def action_size(self) -> int:
@@ -82,6 +83,16 @@ class TrainingConfig:
 
 
 @dataclass(frozen=True)
+class BenchmarkConfig:
+    """Reproducible Stage 3 board benchmark settings."""
+
+    board_warmup_iterations: int
+    board_measurement_iterations: int
+    board_position_plies: int
+    random_seed: int
+
+
+@dataclass(frozen=True)
 class PathsConfig:
     """Repository-relative persistent artifact locations."""
 
@@ -111,6 +122,7 @@ class AppConfig:
     mcts: MctsConfig
     replay: ReplayConfig
     training: TrainingConfig
+    benchmark: BenchmarkConfig
     paths: PathsConfig
     logging: LoggingConfig
 
@@ -127,6 +139,7 @@ def build_config(raw: Mapping[str, Any]) -> AppConfig:
             "mcts",
             "replay",
             "training",
+            "benchmark",
             "paths",
             "logging",
         },
@@ -138,6 +151,7 @@ def build_config(raw: Mapping[str, Any]) -> AppConfig:
     mcts = _build_mcts(_section(raw, "mcts"))
     replay = _build_replay(_section(raw, "replay"))
     training = _build_training(_section(raw, "training"))
+    benchmark = _build_benchmark(_section(raw, "benchmark"))
     paths = _build_paths(_section(raw, "paths"))
     logging = _build_logging(_section(raw, "logging"))
 
@@ -152,6 +166,7 @@ def build_config(raw: Mapping[str, Any]) -> AppConfig:
         mcts=mcts,
         replay=replay,
         training=training,
+        benchmark=benchmark,
         paths=paths,
         logging=logging,
     )
@@ -178,6 +193,7 @@ def _build_rules(raw: Mapping[str, Any]) -> RulesConfig:
             "score_occupied_cells",
             "tie_break",
             "majority_award",
+            "zobrist_seed",
         },
         "rules",
     )
@@ -191,6 +207,7 @@ def _build_rules(raw: Mapping[str, Any]) -> RulesConfig:
         score_occupied_cells=_bool(raw, "score_occupied_cells", "rules"),
         tie_break=_choice(raw, "tie_break", "rules", {"next-distance-layer"}),
         majority_award=_choice(raw, "majority_award", "rules", {"majority-count"}),
+        zobrist_seed=_nonnegative_int(raw, "zobrist_seed", "rules"),
     )
     return rules
 
@@ -251,6 +268,29 @@ def _build_training(raw: Mapping[str, Any]) -> TrainingConfig:
         optimizer=_choice(raw, "optimizer", "training", {"adamw"}),
         learning_rate=_positive_float(raw, "learning_rate", "training"),
         batch_size=_positive_int(raw, "batch_size", "training"),
+    )
+
+
+def _build_benchmark(raw: Mapping[str, Any]) -> BenchmarkConfig:
+    _reject_unknown(
+        raw,
+        {
+            "board_warmup_iterations",
+            "board_measurement_iterations",
+            "board_position_plies",
+            "random_seed",
+        },
+        "benchmark",
+    )
+    return BenchmarkConfig(
+        board_warmup_iterations=_nonnegative_int(
+            raw, "board_warmup_iterations", "benchmark"
+        ),
+        board_measurement_iterations=_positive_int(
+            raw, "board_measurement_iterations", "benchmark"
+        ),
+        board_position_plies=_nonnegative_int(raw, "board_position_plies", "benchmark"),
+        random_seed=_nonnegative_int(raw, "random_seed", "benchmark"),
     )
 
 

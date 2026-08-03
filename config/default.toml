@@ -12,6 +12,7 @@ distance_metric = "squared-euclidean"
 score_occupied_cells = true
 tie_break = "next-distance-layer"
 majority_award = "majority-count"
+zobrist_seed = 7640891576956012809
 
 [network]
 feature_schema_id = "hexadeca-v1-16p"
@@ -34,6 +35,12 @@ capacity_positions = 200000
 optimizer = "adamw"
 learning_rate = 0.0003
 batch_size = 256
+
+[benchmark]
+board_warmup_iterations = 1000
+board_measurement_iterations = 10000
+board_position_plies = 32
+random_seed = 20260803
 
 [paths]
 run_directory = "runs"
