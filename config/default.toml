@@ -1,6 +1,6 @@
 [project]
 name = "hexadeca-alpha-zero"
-config_schema_version = 5
+config_schema_version = 6
 
 [rules]
 ruleset_id = "hexadeca-v1"
@@ -61,12 +61,37 @@ random_seed = 20260803
 [training]
 optimizer = "adamw"
 learning_rate = 0.0003
+weight_decay = 0.0001
+adamw_beta1 = 0.9
+adamw_beta2 = 0.999
+adamw_epsilon = 0.00000001
+adamw_amsgrad = false
+gradient_clip_norm = 1.0
 batch_size = 256
+batches_per_iteration = 64
+minimum_replay_positions = 256
 data_loader_shuffle = true
 data_loader_workers = 0
 data_loader_prefetch_factor = 2
 data_loader_pin_memory = true
 data_loader_drop_last = true
+amp_enabled = true
+amp_dtype = "float16"
+amp_initial_scale = 65536.0
+amp_growth_factor = 2.0
+amp_backoff_factor = 0.5
+amp_growth_interval = 2000
+amp_max_step_retries = 8
+scheduler = "warmup-cosine"
+scheduler_warmup_steps = 1000
+scheduler_decay_steps = 100000
+scheduler_minimum_learning_rate = 0.00003
+checkpoint_interval_iterations = 1
+tensorboard_enabled = true
+tensorboard_log_interval_batches = 1
+tensorboard_flush_seconds = 30
+tensorboard_max_queue = 10
+random_seed = 20260803
 policy_loss_weight = 1.0
 win_loss_weight = 1.0
 black_score_loss_weight = 1.0
@@ -93,6 +118,8 @@ replay_benchmark_positions = 4096
 replay_benchmark_batch_size = 256
 self_play_benchmark_games = 4
 self_play_benchmark_simulations = 64
+trainer_benchmark_warmup_batches = 3
+trainer_benchmark_measurement_batches = 10
 random_seed = 20260803
 
 [paths]

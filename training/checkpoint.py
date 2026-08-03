@@ -24,13 +24,13 @@ from config.schema import AppConfig
 from network import NetworkSpecification, PolicyValueNetwork
 from training.errors import CheckpointCompatibilityError, CheckpointError
 
-CHECKPOINT_SCHEMA_VERSION = 1
+CHECKPOINT_SCHEMA_VERSION = 2
 _STATE_FILE_NAME = "state.pt"
 _MANIFEST_FILE_NAME = "manifest.json"
 _ALIAS_SCHEMA_VERSION = 1
 _SUPPORTED_ALIASES = frozenset({"latest", "best"})
 _IDENTIFIER_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z")
-_MANIFEST_FIELDS = frozenset(
+_MANIFEST_FIELDS_V1 = frozenset(
     {
         "schema_version",
         "checkpoint_id",
@@ -47,7 +47,8 @@ _MANIFEST_FIELDS = frozenset(
         "python_random_state",
     }
 )
-_STATE_FIELDS = frozenset(
+_MANIFEST_FIELDS_V2 = _MANIFEST_FIELDS_V1 | {"has_scaler"}
+_STATE_FIELDS_V1 = frozenset(
     {
         "schema_version",
         "model_state",
@@ -57,6 +58,8 @@ _STATE_FIELDS = frozenset(
         "cuda_rng_states",
     }
 )
+_STATE_FIELDS_V2 = _STATE_FIELDS_V1 | {"scaler_state"}
+_SUPPORTED_CHECKPOINT_SCHEMAS = frozenset({1, CHECKPOINT_SCHEMA_VERSION})
 
 JsonScalar = str | int | float | bool | None
 JsonValue = JsonScalar | list["JsonValue"] | dict[str, "JsonValue"]
@@ -75,6 +78,7 @@ class Stateful(Protocol):
 class CheckpointMetadata:
     """Validated human-readable metadata for one immutable checkpoint."""
 
+    schema_version: int
     checkpoint_id: str
     created_at: str
     iteration: int
@@ -85,6 +89,7 @@ class CheckpointMetadata:
     state_sha256: str
     has_optimizer: bool
     has_scheduler: bool
+    has_scaler: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -113,6 +118,7 @@ class CheckpointManager:
         model: PolicyValueNetwork,
         optimizer: Optimizer | None,
         scheduler: Stateful | None,
+        scaler: Stateful | None = None,
         iteration: int,
         config: AppConfig,
         metrics: Mapping[str, MetricValue],
@@ -160,6 +166,7 @@ class CheckpointManager:
                 "scheduler_state": (
                     scheduler.state_dict() if scheduler is not None else None
                 ),
+                "scaler_state": scaler.state_dict() if scaler is not None else None,
                 "torch_rng_state": torch.get_rng_state(),
                 "cuda_rng_states": (
                     torch.cuda.get_rng_state_all() if torch.cuda.is_available() else []
@@ -181,6 +188,7 @@ class CheckpointManager:
                 "state_sha256": state_sha256,
                 "has_optimizer": optimizer is not None,
                 "has_scheduler": scheduler is not None,
+                "has_scaler": scaler is not None,
                 "python_random_state": _to_json_value(random.getstate()),
             }
             manifest_path = temporary / _MANIFEST_FILE_NAME
@@ -207,6 +215,7 @@ class CheckpointManager:
         model: PolicyValueNetwork,
         optimizer: Optimizer | None = None,
         scheduler: Stateful | None = None,
+        scaler: Stateful | None = None,
         restore_rng: bool = True,
         map_location: torch.device | str = "cpu",
     ) -> CheckpointMetadata:
@@ -230,8 +239,13 @@ class CheckpointManager:
                 state_path, map_location=map_location, weights_only=True
             )
             payload = _validate_state_payload(raw_payload)
+            if payload["schema_version"] != metadata.schema_version:
+                raise CheckpointError(
+                    "Checkpoint manifest and state schema versions disagree"
+                )
             optimizer_state = payload["optimizer_state"]
             scheduler_state = payload["scheduler_state"]
+            scaler_state = payload["scaler_state"]
             if metadata.has_optimizer is not (optimizer_state is not None):
                 raise CheckpointError(
                     "Checkpoint optimizer metadata disagrees with tensor state"
@@ -240,6 +254,10 @@ class CheckpointManager:
                 raise CheckpointError(
                     "Checkpoint scheduler metadata disagrees with tensor state"
                 )
+            if metadata.has_scaler is not (scaler_state is not None):
+                raise CheckpointError(
+                    "Checkpoint scaler metadata disagrees with tensor state"
+                )
             if optimizer is not None and optimizer_state is None:
                 raise CheckpointCompatibilityError(
                     "Checkpoint does not contain optimizer state"
@@ -247,6 +265,10 @@ class CheckpointManager:
             if scheduler is not None and scheduler_state is None:
                 raise CheckpointCompatibilityError(
                     "Checkpoint does not contain scheduler state"
+                )
+            if scaler is not None and scaler_state is None:
+                raise CheckpointCompatibilityError(
+                    "Checkpoint does not contain AMP scaler state"
                 )
             model_state = _required_mapping(payload, "model_state")
             validated_rng = _validate_rng(payload, manifest) if restore_rng else None
@@ -261,6 +283,10 @@ class CheckpointManager:
             if scheduler is not None:
                 scheduler.load_state_dict(
                     cast(dict[str, Any], _required_mapping(payload, "scheduler_state"))
+                )
+            if scaler is not None:
+                scaler.load_state_dict(
+                    cast(dict[str, Any], _required_mapping(payload, "scaler_state"))
                 )
             if validated_rng is not None:
                 _apply_rng(validated_rng)
@@ -361,12 +387,17 @@ class CheckpointManager:
         _validate_identifier(checkpoint_id, "checkpoint_id")
         manifest_path = self._bundle_path(checkpoint_id) / _MANIFEST_FILE_NAME
         manifest = _read_json_object(manifest_path, "checkpoint manifest")
-        if set(manifest) != _MANIFEST_FIELDS:
+        schema_version = _exact_int(manifest, "schema_version")
+        expected_fields = {
+            1: _MANIFEST_FIELDS_V1,
+            CHECKPOINT_SCHEMA_VERSION: _MANIFEST_FIELDS_V2,
+        }.get(schema_version)
+        if expected_fields is None:
+            raise CheckpointError("Checkpoint schema version is unsupported")
+        if set(manifest) != expected_fields:
             raise CheckpointError(
                 "Checkpoint manifest fields are incomplete or unknown"
             )
-        if _exact_int(manifest, "schema_version") != CHECKPOINT_SCHEMA_VERSION:
-            raise CheckpointError("Checkpoint schema version is unsupported")
         if _exact_string(manifest, "checkpoint_id") != checkpoint_id:
             raise CheckpointError("Checkpoint manifest ID does not match its directory")
         if _exact_string(manifest, "state_file") != _STATE_FILE_NAME:
@@ -397,6 +428,7 @@ class CheckpointManager:
         configuration = _exact_object(manifest, "configuration")
         return (
             CheckpointMetadata(
+                schema_version=schema_version,
                 checkpoint_id=checkpoint_id,
                 created_at=_exact_string(manifest, "created_at"),
                 iteration=iteration,
@@ -407,6 +439,11 @@ class CheckpointManager:
                 state_sha256=_validate_sha256(_exact_string(manifest, "state_sha256")),
                 has_optimizer=_exact_bool(manifest, "has_optimizer"),
                 has_scheduler=_exact_bool(manifest, "has_scheduler"),
+                has_scaler=(
+                    _exact_bool(manifest, "has_scaler")
+                    if schema_version >= 2
+                    else False
+                ),
             ),
             manifest,
         )
@@ -419,10 +456,18 @@ def _validate_state_payload(raw: object) -> dict[str, object]:
     if not isinstance(raw, dict) or any(not isinstance(key, str) for key in raw):
         raise CheckpointError("Checkpoint state payload must be a string-keyed mapping")
     payload = cast(dict[str, object], raw)
-    if set(payload) != _STATE_FIELDS:
-        raise CheckpointError("Checkpoint state fields are incomplete or unknown")
-    if payload.get("schema_version") != CHECKPOINT_SCHEMA_VERSION:
+    schema_version = payload.get("schema_version")
+    if type(schema_version) is not int or schema_version not in (
+        _SUPPORTED_CHECKPOINT_SCHEMAS
+    ):
         raise CheckpointError("Checkpoint state schema version is unsupported")
+    expected_fields = (
+        _STATE_FIELDS_V2
+        if schema_version == CHECKPOINT_SCHEMA_VERSION
+        else _STATE_FIELDS_V1
+    )
+    if set(payload) != expected_fields:
+        raise CheckpointError("Checkpoint state fields are incomplete or unknown")
     if not isinstance(payload.get("torch_rng_state"), torch.Tensor):
         raise CheckpointError("Checkpoint torch RNG state must be a tensor")
     cuda_states = payload.get("cuda_rng_states")
@@ -430,6 +475,8 @@ def _validate_state_payload(raw: object) -> dict[str, object]:
         not isinstance(state, torch.Tensor) for state in cuda_states
     ):
         raise CheckpointError("Checkpoint CUDA RNG states must be tensors")
+    if schema_version == 1:
+        payload = {**payload, "scaler_state": None}
     return payload
 
 

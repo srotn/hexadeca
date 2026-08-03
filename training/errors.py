@@ -43,3 +43,19 @@ class CheckpointError(TrainingInfrastructureError):
 
 class CheckpointCompatibilityError(CheckpointError, ValueError):
     """Raised before loading checkpoint state with incompatible metadata."""
+
+
+class TrainerError(TrainingInfrastructureError):
+    """Base error for optimizer-driven model training."""
+
+
+class TrainerConfigurationError(TrainerError, ValueError):
+    """Raised when a Trainer cannot honor its runtime configuration."""
+
+
+class TrainerStateError(TrainerError):
+    """Raised when an iteration or resume request violates Trainer state."""
+
+
+class TrainerStepError(TrainerError):
+    """Raised when a model update cannot complete safely."""

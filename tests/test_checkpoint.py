@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import random
 from dataclasses import replace
@@ -9,6 +10,7 @@ from pathlib import Path
 
 import pytest
 import torch
+from torch.amp.grad_scaler import GradScaler
 
 from config import load_config
 from network import NetworkSpecification, PolicyValueNetwork
@@ -87,6 +89,8 @@ def test_checkpoint_round_trip_restores_training_and_rng_state(
     )
 
     assert restored == metadata
+    assert restored.schema_version == 2
+    assert restored.has_scaler is False
     assert restored.iteration == 7
     assert restored.metrics == {"loss": 1.25, "positions": 512}
     assert optimizer.param_groups[0]["lr"] == pytest.approx(0.005)
@@ -154,3 +158,54 @@ def test_checkpoint_rejects_incompatible_network_before_state_load(
 
     with pytest.raises(CheckpointCompatibilityError, match="incompatible"):
         incompatible_manager.load("latest", model=incompatible_model)
+
+
+def test_stage8_checkpoint_schema_remains_loadable_without_scaler(
+    tmp_path: Path,
+) -> None:
+    """Schema v1 restores its original state but cannot claim AMP scaler data."""
+
+    config, specification, model, optimizer, scheduler = _small_training_stack()
+    manager = CheckpointManager(tmp_path, specification)
+    manager.save(
+        "legacy-checkpoint",
+        model=model,
+        optimizer=optimizer,
+        scheduler=scheduler,
+        iteration=3,
+        config=config,
+        metrics={},
+        aliases=(),
+    )
+    bundle = tmp_path / "bundles" / "legacy-checkpoint"
+    state_path = bundle / "state.pt"
+    state = torch.load(state_path, map_location="cpu", weights_only=True)
+    state["schema_version"] = 1
+    state.pop("scaler_state")
+    torch.save(state, state_path)
+    digest = hashlib.sha256(state_path.read_bytes()).hexdigest()
+    manifest_path = bundle / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["schema_version"] = 1
+    manifest["state_sha256"] = digest
+    manifest.pop("has_scaler")
+    manifest_path.write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+    restored = manager.load(
+        "legacy-checkpoint",
+        model=model,
+        optimizer=optimizer,
+        scheduler=scheduler,
+    )
+
+    assert restored.schema_version == 1
+    assert restored.has_scaler is False
+    with pytest.raises(CheckpointCompatibilityError, match="scaler"):
+        manager.load(
+            "legacy-checkpoint",
+            model=model,
+            scaler=GradScaler("cuda", enabled=False),
+        )

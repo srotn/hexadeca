@@ -244,7 +244,11 @@ normalized final scores `sb` and `sw`, the configurable total loss is:
 silently applied a second time. Loss weights, clipping, optimizer settings,
 and scheduler settings live in training configuration. The requested initial
 optimizer is AdamW with learning rate `3e-4`, batch size 256, replay capacity
-200,000 positions, and a scheduler selected through configuration.
+200,000 positions, weight decay `1e-4`, and global gradient clipping at 1.0.
+Each iteration executes 64 optimizer batches after Replay reaches 256
+positions. The confirmed scheduler linearly warms up over 1,000 successful
+optimizer steps, cosine-decays from `3e-4` to `3e-5` over the next 100,000
+steps, then holds the minimum. CUDA training uses configuration-driven FP16 AMP.
 
 ### 5.4 MCTS
 
@@ -449,8 +453,7 @@ is runnable and its required checks pass.
 The following choices are intentionally not guessed. They are not blockers for
 the Stage 1 design, but must be decided before their implementation stages:
 
-1. Scheduler family and schedule parameters (before Stage 10).
-2. Candidate-versus-best promotion threshold, arena game count, and Elo policy
+1. Candidate-versus-best promotion threshold, arena game count, and Elo policy
    (before Stage 11).
-3. Deployment domain/TLS provider and authentication mechanism (before Stage
+2. Deployment domain/TLS provider and authentication mechanism (before Stage
    13).

@@ -9,6 +9,7 @@ description = "A staged AlphaZero implementation for the Hexadeca board game."
 readme = "README.md"
 requires-python = ">=3.11,<3.14"
 dependencies = [
+  "tensorboard>=2.19,<3",
   "torch>=2.7,<3",
 ]
 

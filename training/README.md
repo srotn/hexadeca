@@ -3,6 +3,42 @@
 Stage 9 adds deterministic multiprocess self-play to the Stage 8 replay, data
 loading, and checkpoint contracts.
 
+Stage 10 adds the optimizer loop. Self-play and training remain sequential
+owners of the active model: completed self-play samples enter Replay atomically,
+then `Trainer` takes an immutable snapshot for one training iteration. This
+prevents mutable Replay writes or inference-mode ownership from racing model
+updates.
+
+## Trainer
+
+One training iteration performs exactly the configured number of optimizer
+updates. If a snapshot contains fewer batches, the deterministic DataLoader is
+reshuffled and cycled; the minimum Replay size still guarantees at least one
+full batch. Each iteration derives its data-order seed independently, so a
+checkpoint resumed at the next iteration reproduces uninterrupted CPU updates.
+
+The optimizer is AdamW with explicit learning rate, weight decay, betas,
+epsilon, and AMSGrad settings. L2 remains exclusively decoupled weight decay and
+is not added to `AlphaZeroLoss`. The scheduler counts successful optimizer
+steps: it linearly warms up for 1,000 steps, cosine-decays for 100,000 further
+steps, then holds the configured minimum learning rate.
+
+CUDA training uses FP16 autocast and `GradScaler`. A detected overflow does not
+advance the optimizer-step counter or scheduler; the scaler backs off and the
+batch is retried up to the configured limit. Gradients are unscaled before the
+configured global-norm clip. CPU training uses float32 and a no-op scaler.
+
+Batch and iteration metrics include all loss components, policy entropy,
+learning rate, gradient norm, AMP retries, positions, and elapsed time.
+TensorBoard is the default metric sink, while the small `MetricSink` protocol
+allows Stage 13 monitoring to subscribe without changing Trainer logic.
+
+Periodic immutable checkpoints contain the model, AdamW, scheduler, GradScaler,
+Python/PyTorch/CUDA RNG states, exact training configuration, update count, and
+metrics. Checkpoint schema v2 adds scaler state while retaining read support for
+Stage 8 schema v1. Resume rejects training-configuration drift and continues
+only from a complete iteration boundary.
+
 ## Self-play
 
 `SelfPlayCoordinator` starts workers with the cross-platform, CUDA-safe
@@ -81,5 +117,5 @@ and PyTorch CPU/CUDA RNG state. Loading verifies metadata compatibility and the
 checksum before using PyTorch's restricted `weights_only` loader. Alias files
 are atomically replaced and never overwrite immutable bundle history.
 
-The trainer lifecycle, optimizer construction, retention policy, and automatic
-save cadence begin in Stage 10.
+Candidate-versus-best promotion and checkpoint retention policy begin in Stage
+11; Stage 10 publishes only the immutable `latest` training lineage.

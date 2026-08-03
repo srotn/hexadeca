@@ -14,7 +14,7 @@ def test_default_config_matches_confirmed_project_parameters() -> None:
 
     config = load_config()
 
-    assert config.project.config_schema_version == 5
+    assert config.project.config_schema_version == 6
     assert config.rules.board_size == 16
     assert config.rules.score_occupied_cells is True
     assert config.rules.action_size == 256
@@ -47,12 +47,39 @@ def test_default_config_matches_confirmed_project_parameters() -> None:
     assert config.self_play.inference_response_timeout_seconds == 120.0
     assert config.self_play.worker_shutdown_timeout_seconds == 10.0
     assert config.self_play.random_seed == 20_260_803
+    assert config.training.optimizer == "adamw"
+    assert config.training.learning_rate == 0.0003
+    assert config.training.weight_decay == 0.0001
+    assert config.training.adamw_beta1 == 0.9
+    assert config.training.adamw_beta2 == 0.999
+    assert config.training.adamw_epsilon == 1e-8
+    assert config.training.adamw_amsgrad is False
+    assert config.training.gradient_clip_norm == 1.0
     assert config.training.batch_size == 256
+    assert config.training.batches_per_iteration == 64
+    assert config.training.minimum_replay_positions == 256
     assert config.training.data_loader_shuffle is True
     assert config.training.data_loader_workers == 0
     assert config.training.data_loader_prefetch_factor == 2
     assert config.training.data_loader_pin_memory is True
     assert config.training.data_loader_drop_last is True
+    assert config.training.amp_enabled is True
+    assert config.training.amp_dtype == "float16"
+    assert config.training.amp_initial_scale == 65_536.0
+    assert config.training.amp_growth_factor == 2.0
+    assert config.training.amp_backoff_factor == 0.5
+    assert config.training.amp_growth_interval == 2_000
+    assert config.training.amp_max_step_retries == 8
+    assert config.training.scheduler == "warmup-cosine"
+    assert config.training.scheduler_warmup_steps == 1_000
+    assert config.training.scheduler_decay_steps == 100_000
+    assert config.training.scheduler_minimum_learning_rate == 0.00003
+    assert config.training.checkpoint_interval_iterations == 1
+    assert config.training.tensorboard_enabled is True
+    assert config.training.tensorboard_log_interval_batches == 1
+    assert config.training.tensorboard_flush_seconds == 30
+    assert config.training.tensorboard_max_queue == 10
+    assert config.training.random_seed == 20_260_803
     assert config.training.policy_loss_weight == 1.0
     assert config.benchmark.board_measurement_iterations == 10_000
     assert config.benchmark.scoring_measurement_iterations == 1_000
@@ -65,6 +92,8 @@ def test_default_config_matches_confirmed_project_parameters() -> None:
     assert config.benchmark.replay_benchmark_batch_size == 256
     assert config.benchmark.self_play_benchmark_games == 4
     assert config.benchmark.self_play_benchmark_simulations == 64
+    assert config.benchmark.trainer_benchmark_warmup_batches == 3
+    assert config.benchmark.trainer_benchmark_measurement_batches == 10
 
 
 def test_profile_and_overrides_are_applied_in_precedence_order(
@@ -187,6 +216,50 @@ def test_invalid_self_play_parameters_are_rejected(
     override: dict[str, object], message: str
 ) -> None:
     """Worker, batching, timeout, and seed controls fail during config load."""
+
+    with pytest.raises(ConfigError, match=message):
+        load_config(overrides=override)
+
+
+@pytest.mark.parametrize(
+    ("override", "message"),
+    [
+        ({"training.weight_decay": -0.1}, "nonnegative"),
+        ({"training.adamw_beta1": 1.0}, "less than 1.0"),
+        ({"training.adamw_beta2": 1.1}, "less than 1.0"),
+        ({"training.adamw_epsilon": 0.0}, "positive"),
+        ({"training.gradient_clip_norm": 0.0}, "positive"),
+        ({"training.batches_per_iteration": 0}, "greater than zero"),
+        (
+            {"training.minimum_replay_positions": 255},
+            "at least training.batch_size",
+        ),
+        (
+            {"training.minimum_replay_positions": 200_001},
+            "must not exceed replay capacity",
+        ),
+        (
+            {"training.scheduler_minimum_learning_rate": 0.0004},
+            "must not exceed learning_rate",
+        ),
+        ({"training.scheduler_warmup_steps": 0}, "greater than zero"),
+        ({"training.scheduler_decay_steps": 0}, "greater than zero"),
+        ({"training.checkpoint_interval_iterations": -1}, "zero or greater"),
+        ({"training.amp_max_step_retries": -1}, "zero or greater"),
+        ({"training.amp_initial_scale": 0.0}, "positive"),
+        ({"training.amp_growth_factor": 1.0}, "greater than 1.0"),
+        ({"training.amp_backoff_factor": 1.0}, "less than 1.0"),
+        ({"training.amp_growth_interval": 0}, "greater than zero"),
+        ({"training.tensorboard_log_interval_batches": 0}, "greater than zero"),
+        ({"training.tensorboard_flush_seconds": 0}, "greater than zero"),
+        ({"training.tensorboard_max_queue": 0}, "greater than zero"),
+        ({"training.random_seed": -1}, "zero or greater"),
+    ],
+)
+def test_invalid_trainer_parameters_are_rejected(
+    override: dict[str, object], message: str
+) -> None:
+    """Optimizer, scheduler, AMP, logging, and lifecycle controls are validated."""
 
     with pytest.raises(ConfigError, match=message):
         load_config(overrides=override)

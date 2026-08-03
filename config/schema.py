@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, TypeVar
 
 _T = TypeVar("_T")
-CONFIG_SCHEMA_VERSION = 5
+CONFIG_SCHEMA_VERSION = 6
 
 
 class SchemaError(ValueError):
@@ -112,12 +112,37 @@ class TrainingConfig:
 
     optimizer: str
     learning_rate: float
+    weight_decay: float
+    adamw_beta1: float
+    adamw_beta2: float
+    adamw_epsilon: float
+    adamw_amsgrad: bool
+    gradient_clip_norm: float
     batch_size: int
+    batches_per_iteration: int
+    minimum_replay_positions: int
     data_loader_shuffle: bool
     data_loader_workers: int
     data_loader_prefetch_factor: int
     data_loader_pin_memory: bool
     data_loader_drop_last: bool
+    amp_enabled: bool
+    amp_dtype: str
+    amp_initial_scale: float
+    amp_growth_factor: float
+    amp_backoff_factor: float
+    amp_growth_interval: int
+    amp_max_step_retries: int
+    scheduler: str
+    scheduler_warmup_steps: int
+    scheduler_decay_steps: int
+    scheduler_minimum_learning_rate: float
+    checkpoint_interval_iterations: int
+    tensorboard_enabled: bool
+    tensorboard_log_interval_batches: int
+    tensorboard_flush_seconds: int
+    tensorboard_max_queue: int
+    random_seed: int
     policy_loss_weight: float
     win_loss_weight: float
     black_score_loss_weight: float
@@ -148,6 +173,8 @@ class BenchmarkConfig:
     replay_benchmark_batch_size: int
     self_play_benchmark_games: int
     self_play_benchmark_simulations: int
+    trainer_benchmark_warmup_batches: int
+    trainer_benchmark_measurement_batches: int
     random_seed: int
 
 
@@ -235,6 +262,24 @@ def build_config(raw: Mapping[str, Any]) -> AppConfig:
         raise SchemaError("Only root-scoped MCTS noise is supported")
     if training.batch_size > replay.capacity_positions:
         raise SchemaError("training.batch_size must not exceed replay capacity")
+    if training.minimum_replay_positions < training.batch_size:
+        raise SchemaError(
+            "training.minimum_replay_positions must be at least training.batch_size"
+        )
+    if training.minimum_replay_positions > replay.capacity_positions:
+        raise SchemaError(
+            "training.minimum_replay_positions must not exceed replay capacity"
+        )
+    if training.scheduler_minimum_learning_rate > training.learning_rate:
+        raise SchemaError(
+            "training.scheduler_minimum_learning_rate must not exceed learning_rate"
+        )
+    if training.adamw_beta1 >= 1.0 or training.adamw_beta2 >= 1.0:
+        raise SchemaError("training AdamW beta values must be less than 1.0")
+    if training.amp_growth_factor <= 1.0:
+        raise SchemaError("training.amp_growth_factor must be greater than 1.0")
+    if training.amp_backoff_factor >= 1.0:
+        raise SchemaError("training.amp_backoff_factor must be less than 1.0")
     if benchmark.replay_benchmark_batch_size > benchmark.replay_benchmark_positions:
         raise SchemaError(
             "benchmark.replay_benchmark_batch_size must not exceed benchmark positions"
@@ -451,12 +496,37 @@ def _build_training(raw: Mapping[str, Any]) -> TrainingConfig:
         {
             "optimizer",
             "learning_rate",
+            "weight_decay",
+            "adamw_beta1",
+            "adamw_beta2",
+            "adamw_epsilon",
+            "adamw_amsgrad",
+            "gradient_clip_norm",
             "batch_size",
+            "batches_per_iteration",
+            "minimum_replay_positions",
             "data_loader_shuffle",
             "data_loader_workers",
             "data_loader_prefetch_factor",
             "data_loader_pin_memory",
             "data_loader_drop_last",
+            "amp_enabled",
+            "amp_dtype",
+            "amp_initial_scale",
+            "amp_growth_factor",
+            "amp_backoff_factor",
+            "amp_growth_interval",
+            "amp_max_step_retries",
+            "scheduler",
+            "scheduler_warmup_steps",
+            "scheduler_decay_steps",
+            "scheduler_minimum_learning_rate",
+            "checkpoint_interval_iterations",
+            "tensorboard_enabled",
+            "tensorboard_log_interval_batches",
+            "tensorboard_flush_seconds",
+            "tensorboard_max_queue",
+            "random_seed",
             "policy_loss_weight",
             "win_loss_weight",
             "black_score_loss_weight",
@@ -467,7 +537,17 @@ def _build_training(raw: Mapping[str, Any]) -> TrainingConfig:
     return TrainingConfig(
         optimizer=_choice(raw, "optimizer", "training", {"adamw"}),
         learning_rate=_positive_float(raw, "learning_rate", "training"),
+        weight_decay=_nonnegative_float(raw, "weight_decay", "training"),
+        adamw_beta1=_nonnegative_float(raw, "adamw_beta1", "training"),
+        adamw_beta2=_nonnegative_float(raw, "adamw_beta2", "training"),
+        adamw_epsilon=_positive_float(raw, "adamw_epsilon", "training"),
+        adamw_amsgrad=_bool(raw, "adamw_amsgrad", "training"),
+        gradient_clip_norm=_positive_float(raw, "gradient_clip_norm", "training"),
         batch_size=_positive_int(raw, "batch_size", "training"),
+        batches_per_iteration=_positive_int(raw, "batches_per_iteration", "training"),
+        minimum_replay_positions=_positive_int(
+            raw, "minimum_replay_positions", "training"
+        ),
         data_loader_shuffle=_bool(raw, "data_loader_shuffle", "training"),
         data_loader_workers=_nonnegative_int(raw, "data_loader_workers", "training"),
         data_loader_prefetch_factor=_positive_int(
@@ -475,6 +555,31 @@ def _build_training(raw: Mapping[str, Any]) -> TrainingConfig:
         ),
         data_loader_pin_memory=_bool(raw, "data_loader_pin_memory", "training"),
         data_loader_drop_last=_bool(raw, "data_loader_drop_last", "training"),
+        amp_enabled=_bool(raw, "amp_enabled", "training"),
+        amp_dtype=_choice(raw, "amp_dtype", "training", {"float16"}),
+        amp_initial_scale=_positive_float(raw, "amp_initial_scale", "training"),
+        amp_growth_factor=_positive_float(raw, "amp_growth_factor", "training"),
+        amp_backoff_factor=_positive_float(raw, "amp_backoff_factor", "training"),
+        amp_growth_interval=_positive_int(raw, "amp_growth_interval", "training"),
+        amp_max_step_retries=_nonnegative_int(raw, "amp_max_step_retries", "training"),
+        scheduler=_choice(raw, "scheduler", "training", {"warmup-cosine"}),
+        scheduler_warmup_steps=_positive_int(raw, "scheduler_warmup_steps", "training"),
+        scheduler_decay_steps=_positive_int(raw, "scheduler_decay_steps", "training"),
+        scheduler_minimum_learning_rate=_positive_float(
+            raw, "scheduler_minimum_learning_rate", "training"
+        ),
+        checkpoint_interval_iterations=_nonnegative_int(
+            raw, "checkpoint_interval_iterations", "training"
+        ),
+        tensorboard_enabled=_bool(raw, "tensorboard_enabled", "training"),
+        tensorboard_log_interval_batches=_positive_int(
+            raw, "tensorboard_log_interval_batches", "training"
+        ),
+        tensorboard_flush_seconds=_positive_int(
+            raw, "tensorboard_flush_seconds", "training"
+        ),
+        tensorboard_max_queue=_positive_int(raw, "tensorboard_max_queue", "training"),
+        random_seed=_nonnegative_int(raw, "random_seed", "training"),
         policy_loss_weight=_nonnegative_float(raw, "policy_loss_weight", "training"),
         win_loss_weight=_nonnegative_float(raw, "win_loss_weight", "training"),
         black_score_loss_weight=_nonnegative_float(
@@ -510,6 +615,8 @@ def _build_benchmark(raw: Mapping[str, Any]) -> BenchmarkConfig:
             "replay_benchmark_batch_size",
             "self_play_benchmark_games",
             "self_play_benchmark_simulations",
+            "trainer_benchmark_warmup_batches",
+            "trainer_benchmark_measurement_batches",
             "random_seed",
         },
         "benchmark",
@@ -572,6 +679,12 @@ def _build_benchmark(raw: Mapping[str, Any]) -> BenchmarkConfig:
         ),
         self_play_benchmark_simulations=_positive_int(
             raw, "self_play_benchmark_simulations", "benchmark"
+        ),
+        trainer_benchmark_warmup_batches=_nonnegative_int(
+            raw, "trainer_benchmark_warmup_batches", "benchmark"
+        ),
+        trainer_benchmark_measurement_batches=_positive_int(
+            raw, "trainer_benchmark_measurement_batches", "benchmark"
         ),
         random_seed=_nonnegative_int(raw, "random_seed", "benchmark"),
     )

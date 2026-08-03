@@ -2,13 +2,13 @@
 
 This repository develops a neural-network-guided AlphaZero agent for the
 Hexadeca board game through gated stages. The current implementation is Stage
-9: deterministic multiprocess self-play with centralized neural inference,
-validated replay storage, PyTorch data loading, and resumable immutable
-checkpoints.
+10: deterministic multiprocess self-play plus a configuration-driven Trainer
+with CUDA AMP, warmup/cosine scheduling, TensorBoard metrics, validated Replay
+loading, and resumable immutable checkpoints.
 
 The authoritative requirements and architecture are documented in
-[`STAGE1_DESIGN.md`](STAGE1_DESIGN.md). Trainer lifecycle and optimization
-remain deliberately absent until Stage 10.
+[`STAGE1_DESIGN.md`](STAGE1_DESIGN.md). Candidate-versus-best arena evaluation
+and Elo remain deliberately absent until Stage 11.
 
 ## Local setup
 
@@ -71,6 +71,15 @@ Run the configured Stage 9 multiprocess self-play benchmark:
 
 The command uses CUDA AMP when CUDA is available and falls back to CPU. Pass
 `--cpu-only` to force CPU inference.
+
+Run the configured Stage 10 optimizer/CUDA AMP benchmark:
+
+```powershell
+.\.venv\Scripts\python -m benchmark.trainer
+```
+
+The report measures real forward, composite loss, backward, gradient clipping,
+AdamW, and scheduler work. Pass `--cpu-only` to force float32 CPU training.
 
 ## Repository layout
 

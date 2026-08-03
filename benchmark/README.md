@@ -60,6 +60,18 @@ The report includes worker startup and shutdown in wall-clock throughput and
 records games, generated positions, simulations, centralized inference calls,
 and actual average/maximum inference batch size.
 
+Run the Stage 10 real optimizer benchmark:
+
+```powershell
+.\.venv\Scripts\python -m benchmark.trainer
+```
+
+The configured full ResNet performs warm-up and measured batches through
+forward, all four losses, backward, AMP unscale, gradient clipping, AdamW, and
+the scheduler. TensorBoard, checkpoint I/O, and data collation are excluded
+from the timed optimizer scope. CUDA FP16 AMP is selected when available; use
+`--cpu-only` for float32 CPU training.
+
 Applicable warm-up, measurement, position, game, simulation, and random-seed
 settings come from the merged project configuration. The commands write
 machine-readable reports to the configured benchmark-results directory.
