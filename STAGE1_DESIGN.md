@@ -260,17 +260,14 @@ at every player transition.
 
 Training self-play uses 800 simulations per move; evaluation and match play
 use 1,600. At the root during training, legal priors receive Dirichlet noise
-with concentration 0.15. The sampling temperature is 1 for plies 0 through
-14 and 0 thereafter. At temperature zero, the chosen action is deterministic
-with a documented stable action-index tie-break.
+with concentration 0.15 and mixing weight 0.25. Virtual loss has magnitude 3,
+and the initial per-search inference batch limit is 32. The sampling temperature
+is 1 for plies 0 through 14 and 0 thereafter. At temperature zero, the chosen
+action is deterministic with a documented stable action-index tie-break.
 
 Virtual loss, parallel search, batched inference, memory pools, and any
 transposition table must preserve serial-search semantics. They will first be
 validated by deterministic test vectors and then enabled behind configuration.
-
-The requested Dirichlet mixing weight and the virtual-loss magnitude have not
-been specified. They are required configuration decisions before Stage 7; no
-default will be assumed.
 
 ### 5.5 Replay, self-play, and checkpoints
 
@@ -438,11 +435,9 @@ is runnable and its required checks pass.
 The following choices are intentionally not guessed. They are not blockers for
 the Stage 1 design, but must be decided before their implementation stages:
 
-1. The Dirichlet root-noise mixing weight and the virtual-loss amount (before
-   Stage 7).
-2. Scheduler family and schedule parameters (before Stage 10).
-3. Candidate-versus-best promotion threshold, arena game count, and Elo policy
+1. Scheduler family and schedule parameters (before Stage 10).
+2. Candidate-versus-best promotion threshold, arena game count, and Elo policy
    (before Stage 11).
-4. Deployment domain/TLS provider and authentication mechanism (before Stage
+3. Deployment domain/TLS provider and authentication mechanism (before Stage
    13).
-5. Replay-buffer persistence policy for production restarts (before Stage 8).
+4. Replay-buffer persistence policy for production restarts (before Stage 8).

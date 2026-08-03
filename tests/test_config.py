@@ -14,6 +14,7 @@ def test_default_config_matches_confirmed_project_parameters() -> None:
 
     config = load_config()
 
+    assert config.project.config_schema_version == 2
     assert config.rules.board_size == 16
     assert config.rules.score_occupied_cells is True
     assert config.rules.action_size == 256
@@ -25,6 +26,12 @@ def test_default_config_matches_confirmed_project_parameters() -> None:
     assert config.network.policy_size == 256
     assert config.mcts.training_simulations == 800
     assert config.mcts.evaluation_simulations == 1600
+    assert config.mcts.dirichlet_alpha == 0.15
+    assert config.mcts.dirichlet_epsilon == 0.25
+    assert config.mcts.virtual_loss == 3
+    assert config.mcts.inference_batch_size == 32
+    assert config.mcts.opening_temperature == 1.0
+    assert config.mcts.endgame_temperature == 0.0
     assert config.replay.capacity_positions == 200_000
     assert config.training.batch_size == 256
     assert config.training.policy_loss_weight == 1.0
@@ -32,6 +39,9 @@ def test_default_config_matches_confirmed_project_parameters() -> None:
     assert config.benchmark.scoring_measurement_iterations == 1_000
     assert config.benchmark.environment_measurement_iterations == 1_000
     assert config.benchmark.network_gpu_batch_sizes == (1, 32, 256)
+    assert config.benchmark.mcts_warmup_iterations == 2
+    assert config.benchmark.mcts_measurement_iterations == 5
+    assert config.benchmark.mcts_benchmark_simulations == 800
 
 
 def test_profile_and_overrides_are_applied_in_precedence_order(
@@ -64,6 +74,13 @@ def test_unknown_configuration_key_is_rejected(tmp_path: Path) -> None:
         load_config(profile_path=profile_path)
 
 
+def test_unknown_configuration_schema_version_is_rejected() -> None:
+    """A config cannot claim compatibility with an unsupported schema."""
+
+    with pytest.raises(ConfigError, match=r"Unsupported.*config_schema_version"):
+        load_config(overrides={"project.config_schema_version": 99})
+
+
 def test_incompatible_ruleset_dimensions_are_rejected() -> None:
     """The board and policy shapes cannot be changed independently."""
 
@@ -83,3 +100,20 @@ def test_all_training_objectives_cannot_be_disabled() -> None:
                 "training.white_score_loss_weight": 0.0,
             }
         )
+
+
+@pytest.mark.parametrize(
+    ("override", "message"),
+    [
+        ({"mcts.dirichlet_epsilon": 1.1}, "at most 1.0"),
+        ({"mcts.virtual_loss": 0}, "greater than zero"),
+        ({"mcts.inference_batch_size": 0}, "greater than zero"),
+    ],
+)
+def test_invalid_mcts_parallelism_parameters_are_rejected(
+    override: dict[str, object], message: str
+) -> None:
+    """Noise and virtual batch controls fail during unified config loading."""
+
+    with pytest.raises(ConfigError, match=message):
+        load_config(overrides=override)

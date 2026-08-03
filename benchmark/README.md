@@ -28,6 +28,15 @@ Use `--cpu-only` on hosts without a configured CUDA runtime. The network
 report distinguishes batch calls per second from positions per second and
 records PyTorch, CUDA, device, architecture, precision, and batch size.
 
+Run the Stage 7 Python-core and CUDA AMP neural-MCTS benchmark:
+
+```powershell
+.\.venv\Scripts\python -m benchmark.mcts
+```
+
+The report distinguishes complete searches per second, simulations per second,
+and the actual average/maximum neural inference batch formed by the tree.
+
 Warm-up count, measurement count, position depth, and random seed come from the
 merged project configuration. The commands write machine-readable reports to
 the configured benchmark-results directory.

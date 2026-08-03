@@ -2,12 +2,12 @@
 
 This repository develops a neural-network-guided AlphaZero agent for the
 Hexadeca board game through gated stages. The current implementation is Stage
-6: a self-play-ready game environment plus a versioned 16-plane PyTorch
-residual policy-value network with legal masking and composite training loss.
+7: a self-play-ready game environment, residual policy-value network, and
+exact-simulation neural MCTS with PUCT, virtual loss, and batched inference.
 
 The authoritative requirements and architecture are documented in
-[`STAGE1_DESIGN.md`](STAGE1_DESIGN.md). MCTS remains deliberately absent until
-Stage 7.
+[`STAGE1_DESIGN.md`](STAGE1_DESIGN.md). Replay storage and self-play worker
+orchestration remain deliberately absent until Stages 8 and 9.
 
 ## Local setup
 
@@ -50,6 +50,12 @@ Run the configured Stage 6 CPU/CUDA inference benchmark:
 .\.venv\Scripts\python -m benchmark.network
 ```
 
+Run the configured Stage 7 MCTS core/CUDA benchmark:
+
+```powershell
+.\.venv\Scripts\python -m benchmark.mcts
+```
+
 ## Repository layout
 
 ```text
@@ -57,7 +63,7 @@ benchmark/  Reproducible benchmark scripts and reports.
 config/     Versioned TOML configuration and validation.
 cpp/        Reserved for profile-validated C++20 acceleration.
 game/       Board, scoring, and immutable self-play environment contracts.
-mcts/       Reserved for neural MCTS (Stage 7).
+mcts/       PUCT nodes, virtual loss, batched evaluator, and neural search.
 network/    Versioned features, residual policy-value model, mask, and loss.
 tests/      Unit and integration tests.
 training/   Reserved for replay, self-play, and training stages.

@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, TypeVar
 
 _T = TypeVar("_T")
+CONFIG_SCHEMA_VERSION = 2
 
 
 class SchemaError(ValueError):
@@ -70,7 +71,12 @@ class MctsConfig:
     evaluation_simulations: int
     c_puct: float
     dirichlet_alpha: float
+    dirichlet_epsilon: float
+    virtual_loss: int
+    inference_batch_size: int
     stochastic_plies: int
+    opening_temperature: float
+    endgame_temperature: float
 
 
 @dataclass(frozen=True)
@@ -108,6 +114,9 @@ class BenchmarkConfig:
     network_measurement_iterations: int
     network_cpu_batch_size: int
     network_gpu_batch_sizes: tuple[int, ...]
+    mcts_warmup_iterations: int
+    mcts_measurement_iterations: int
+    mcts_benchmark_simulations: int
     random_seed: int
 
 
@@ -203,10 +212,16 @@ def build_config(raw: Mapping[str, Any]) -> AppConfig:
 
 def _build_project(raw: Mapping[str, Any]) -> ProjectConfig:
     _reject_unknown(raw, {"name", "config_schema_version"}, "project")
-    return ProjectConfig(
+    project = ProjectConfig(
         name=_string(raw, "name", "project"),
         config_schema_version=_positive_int(raw, "config_schema_version", "project"),
     )
+    if project.config_schema_version != CONFIG_SCHEMA_VERSION:
+        raise SchemaError(
+            "Unsupported project.config_schema_version: "
+            f"{project.config_schema_version}"
+        )
+    return project
 
 
 def _build_rules(raw: Mapping[str, Any]) -> RulesConfig:
@@ -289,7 +304,12 @@ def _build_mcts(raw: Mapping[str, Any]) -> MctsConfig:
             "evaluation_simulations",
             "c_puct",
             "dirichlet_alpha",
+            "dirichlet_epsilon",
+            "virtual_loss",
+            "inference_batch_size",
             "stochastic_plies",
+            "opening_temperature",
+            "endgame_temperature",
         },
         "mcts",
     )
@@ -298,7 +318,18 @@ def _build_mcts(raw: Mapping[str, Any]) -> MctsConfig:
         evaluation_simulations=_positive_int(raw, "evaluation_simulations", "mcts"),
         c_puct=_positive_float(raw, "c_puct", "mcts"),
         dirichlet_alpha=_positive_float(raw, "dirichlet_alpha", "mcts"),
+        dirichlet_epsilon=_bounded_float(
+            raw,
+            "dirichlet_epsilon",
+            "mcts",
+            lower_bound=0.0,
+            upper_bound=1.0,
+        ),
+        virtual_loss=_positive_int(raw, "virtual_loss", "mcts"),
+        inference_batch_size=_positive_int(raw, "inference_batch_size", "mcts"),
         stochastic_plies=_nonnegative_int(raw, "stochastic_plies", "mcts"),
+        opening_temperature=_positive_float(raw, "opening_temperature", "mcts"),
+        endgame_temperature=_nonnegative_float(raw, "endgame_temperature", "mcts"),
     )
 
 
@@ -353,6 +384,9 @@ def _build_benchmark(raw: Mapping[str, Any]) -> BenchmarkConfig:
             "network_measurement_iterations",
             "network_cpu_batch_size",
             "network_gpu_batch_sizes",
+            "mcts_warmup_iterations",
+            "mcts_measurement_iterations",
+            "mcts_benchmark_simulations",
             "random_seed",
         },
         "benchmark",
@@ -388,6 +422,15 @@ def _build_benchmark(raw: Mapping[str, Any]) -> BenchmarkConfig:
         ),
         network_gpu_batch_sizes=_positive_int_tuple(
             raw, "network_gpu_batch_sizes", "benchmark"
+        ),
+        mcts_warmup_iterations=_nonnegative_int(
+            raw, "mcts_warmup_iterations", "benchmark"
+        ),
+        mcts_measurement_iterations=_positive_int(
+            raw, "mcts_measurement_iterations", "benchmark"
+        ),
+        mcts_benchmark_simulations=_positive_int(
+            raw, "mcts_benchmark_simulations", "benchmark"
         ),
         random_seed=_nonnegative_int(raw, "random_seed", "benchmark"),
     )

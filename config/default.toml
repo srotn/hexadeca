@@ -1,6 +1,6 @@
 [project]
 name = "hexadeca-alpha-zero"
-config_schema_version = 1
+config_schema_version = 2
 
 [rules]
 ruleset_id = "hexadeca-v1"
@@ -32,7 +32,12 @@ training_simulations = 800
 evaluation_simulations = 1600
 c_puct = 2.3
 dirichlet_alpha = 0.15
+dirichlet_epsilon = 0.25
+virtual_loss = 3
+inference_batch_size = 32
 stochastic_plies = 15
+opening_temperature = 1.0
+endgame_temperature = 0.0
 
 [replay]
 capacity_positions = 200000
@@ -58,6 +63,9 @@ network_warmup_iterations = 3
 network_measurement_iterations = 10
 network_cpu_batch_size = 1
 network_gpu_batch_sizes = [1, 32, 256]
+mcts_warmup_iterations = 2
+mcts_measurement_iterations = 5
+mcts_benchmark_simulations = 800
 random_seed = 20260803
 
 [paths]
