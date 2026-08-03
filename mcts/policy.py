@@ -33,6 +33,10 @@ def add_root_dirichlet_noise(
 ) -> None:
     """Mix configured Dirichlet noise into all legal root priors in place."""
 
+    if not config.root_noise_enabled:
+        raise NodeStateError("Root noise is disabled by MCTS configuration")
+    if not config.root_noise_only:
+        raise NodeStateError("Only root-scoped MCTS noise is supported")
     if not root.expanded or not root.children:
         raise NodeStateError("Root must be expanded before adding Dirichlet noise")
     noise = [

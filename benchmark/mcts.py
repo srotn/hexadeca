@@ -99,8 +99,11 @@ def run_mcts_benchmark(
         "mcts": {
             "simulations": benchmark_simulations,
             "c_puct": benchmark_config.c_puct,
+            "root_noise_enabled": benchmark_config.root_noise_enabled,
+            "root_noise_only": benchmark_config.root_noise_only,
             "virtual_loss": benchmark_config.virtual_loss,
-            "inference_batch_size": benchmark_config.inference_batch_size,
+            "fpu_reduction": benchmark_config.fpu_reduction,
+            "max_inference_batch_size": (benchmark_config.max_inference_batch_size),
         },
         "network": {
             **specification.to_dict(),

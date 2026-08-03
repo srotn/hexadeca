@@ -114,13 +114,17 @@ class MctsNode:
         }
         self.expanded = True
 
-    def select_edge(self, c_puct: float) -> tuple[int, MctsEdge] | None:
+    def select_edge(
+        self, c_puct: float, fpu_reduction: float
+    ) -> tuple[int, MctsEdge] | None:
         """Select the highest PUCT edge with a stable lower-action tie-break."""
 
         if not self.expanded or not self.children:
             raise NodeStateError("Only an expanded non-terminal node can select")
         if not isfinite(c_puct) or c_puct <= 0:
             raise NodeStateError("c_puct must be finite and positive")
+        if not isfinite(fpu_reduction) or fpu_reduction < 0:
+            raise NodeStateError("fpu_reduction must be finite and nonnegative")
 
         virtual_visits = sum(
             edge.virtual_visit_count for edge in self.children.values()
@@ -133,7 +137,12 @@ class MctsNode:
             child = edge.child
             if child is not None and child.evaluation_in_flight and not child.expanded:
                 continue
-            score = edge.effective_mean_value + (
+            edge_value = (
+                edge.effective_mean_value
+                if edge.effective_visit_count > 0
+                else self.mean_value - fpu_reduction
+            )
+            score = edge_value + (
                 exploration_scale * edge.prior / (1 + edge.effective_visit_count)
             )
             if score > selected_score:

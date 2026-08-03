@@ -1,6 +1,6 @@
 [project]
 name = "hexadeca-alpha-zero"
-config_schema_version = 2
+config_schema_version = 3
 
 [rules]
 ruleset_id = "hexadeca-v1"
@@ -31,10 +31,13 @@ batch_norm_momentum = 0.1
 training_simulations = 800
 evaluation_simulations = 1600
 c_puct = 2.3
+root_noise_enabled = true
+root_noise_only = true
 dirichlet_alpha = 0.15
 dirichlet_epsilon = 0.25
 virtual_loss = 3
-inference_batch_size = 32
+fpu_reduction = 0.0
+max_inference_batch_size = 32
 stochastic_plies = 15
 opening_temperature = 1.0
 endgame_temperature = 0.0

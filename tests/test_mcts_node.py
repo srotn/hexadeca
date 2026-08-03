@@ -42,14 +42,29 @@ def test_puct_uses_prior_then_virtual_loss_with_stable_action_ties() -> None:
     node = MctsNode(Player.BLACK, zobrist_hash=1, terminal=False)
     node.expand({2: 0.5, 4: 0.5})
 
-    first = node.select_edge(c_puct=2.3)
+    first = node.select_edge(c_puct=2.3, fpu_reduction=0.0)
     assert first is not None
     assert first[0] == 2
     first[1].reserve(3)
 
-    second = node.select_edge(c_puct=2.3)
+    second = node.select_edge(c_puct=2.3, fpu_reduction=0.0)
     assert second is not None
     assert second[0] == 4
+
+
+def test_fpu_reduction_uses_parent_value_for_unvisited_edges() -> None:
+    """Configured FPU can favor or reduce an unvisited action deterministically."""
+
+    node = MctsNode(Player.BLACK, zobrist_hash=1, terminal=False)
+    node.expand({0: 0.5, 1: 0.5})
+    node.record(0.8)
+    node.children[0].record(0.2)
+
+    unreduced = node.select_edge(c_puct=2.3, fpu_reduction=0.0)
+    reduced = node.select_edge(c_puct=2.3, fpu_reduction=2.0)
+
+    assert unreduced is not None and unreduced[0] == 1
+    assert reduced is not None and reduced[0] == 0
 
 
 def test_backup_alternates_value_perspective_and_clears_reservations() -> None:

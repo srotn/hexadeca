@@ -13,7 +13,7 @@ def test_mcts_benchmark_reports_simulation_and_batch_throughput() -> None:
     """A minimal core run preserves exact search and inference units."""
 
     config = load_config()
-    mcts_config = replace(config.mcts, inference_batch_size=4)
+    mcts_config = replace(config.mcts, max_inference_batch_size=4)
     specification = replace(
         NetworkSpecification.from_config(config.rules, config.network),
         residual_blocks=1,

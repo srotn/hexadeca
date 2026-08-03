@@ -60,7 +60,7 @@ def test_cuda_amp_evaluator_integrates_with_batched_search() -> None:
     mcts_config = replace(
         config.mcts,
         evaluation_simulations=8,
-        inference_batch_size=4,
+        max_inference_batch_size=4,
     )
     evaluator = TorchBatchEvaluator(model, specification, device="cuda", use_amp=True)
 

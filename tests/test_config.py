@@ -14,7 +14,7 @@ def test_default_config_matches_confirmed_project_parameters() -> None:
 
     config = load_config()
 
-    assert config.project.config_schema_version == 2
+    assert config.project.config_schema_version == 3
     assert config.rules.board_size == 16
     assert config.rules.score_occupied_cells is True
     assert config.rules.action_size == 256
@@ -29,7 +29,10 @@ def test_default_config_matches_confirmed_project_parameters() -> None:
     assert config.mcts.dirichlet_alpha == 0.15
     assert config.mcts.dirichlet_epsilon == 0.25
     assert config.mcts.virtual_loss == 3
-    assert config.mcts.inference_batch_size == 32
+    assert config.mcts.root_noise_enabled is True
+    assert config.mcts.root_noise_only is True
+    assert config.mcts.fpu_reduction == 0.0
+    assert config.mcts.max_inference_batch_size == 32
     assert config.mcts.opening_temperature == 1.0
     assert config.mcts.endgame_temperature == 0.0
     assert config.replay.capacity_positions == 200_000
@@ -107,7 +110,9 @@ def test_all_training_objectives_cannot_be_disabled() -> None:
     [
         ({"mcts.dirichlet_epsilon": 1.1}, "at most 1.0"),
         ({"mcts.virtual_loss": 0}, "greater than zero"),
-        ({"mcts.inference_batch_size": 0}, "greater than zero"),
+        ({"mcts.fpu_reduction": -0.1}, "nonnegative"),
+        ({"mcts.max_inference_batch_size": 0}, "greater than zero"),
+        ({"mcts.root_noise_only": False}, "root-scoped"),
     ],
 )
 def test_invalid_mcts_parallelism_parameters_are_rejected(

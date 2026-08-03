@@ -82,7 +82,11 @@ class MctsSearch:
         root_actions = self._validate_root_state(root_state)
         if root_state.terminal:
             raise SearchStateError("Cannot search a terminal root state")
-        if mode is SearchMode.TRAINING and random_source is None:
+        if (
+            mode is SearchMode.TRAINING
+            and self._config.root_noise_enabled
+            and random_source is None
+        ):
             raise SearchStateError("Training search requires an explicit random source")
 
         root = MctsNode(
@@ -95,7 +99,7 @@ class MctsSearch:
         inference_batches = 1
         inference_positions = 1
         maximum_batch_size = 1
-        if mode is SearchMode.TRAINING:
+        if mode is SearchMode.TRAINING and self._config.root_noise_enabled:
             if random_source is None:
                 raise SearchStateError("Training search requires a random source")
             add_root_dirichlet_noise(root, self._config, random_source)
@@ -106,7 +110,7 @@ class MctsSearch:
             completed_before_batch = completed_simulations
             pending: list[_PendingLeaf] = []
             while (
-                len(pending) < self._config.inference_batch_size
+                len(pending) < self._config.max_inference_batch_size
                 and completed_simulations + len(pending) < target_simulations
             ):
                 selected = self._select_leaf(root, root_actions)
@@ -182,7 +186,9 @@ class MctsSearch:
         edges: list[MctsEdge] = []
         try:
             while True:
-                selected = node.select_edge(self._config.c_puct)
+                selected = node.select_edge(
+                    self._config.c_puct, self._config.fpu_reduction
+                )
                 if selected is None:
                     cancel_path(tuple(edges), virtual_loss=self._config.virtual_loss)
                     return None

@@ -261,9 +261,11 @@ at every player transition.
 Training self-play uses 800 simulations per move; evaluation and match play
 use 1,600. At the root during training, legal priors receive Dirichlet noise
 with concentration 0.15 and mixing weight 0.25. Virtual loss has magnitude 3,
-and the initial per-search inference batch limit is 32. The sampling temperature
-is 1 for plies 0 through 14 and 0 thereafter. At temperature zero, the chosen
-action is deterministic with a documented stable action-index tie-break.
+root noise is restricted to training root nodes, and first-play urgency uses
+`parent_q - fpu_reduction` with an initial reduction of 0. The initial
+per-search inference batch limit is 32. The sampling temperature is 1 for plies
+0 through 14 and 0 thereafter. At temperature zero, the chosen action is
+deterministic with a documented stable action-index tie-break.
 
 Virtual loss, parallel search, batched inference, memory pools, and any
 transposition table must preserve serial-search semantics. They will first be

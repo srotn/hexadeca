@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, TypeVar
 
 _T = TypeVar("_T")
-CONFIG_SCHEMA_VERSION = 2
+CONFIG_SCHEMA_VERSION = 3
 
 
 class SchemaError(ValueError):
@@ -70,10 +70,13 @@ class MctsConfig:
     training_simulations: int
     evaluation_simulations: int
     c_puct: float
+    root_noise_enabled: bool
+    root_noise_only: bool
     dirichlet_alpha: float
     dirichlet_epsilon: float
     virtual_loss: int
-    inference_batch_size: int
+    fpu_reduction: float
+    max_inference_batch_size: int
     stochastic_plies: int
     opening_temperature: float
     endgame_temperature: float
@@ -197,6 +200,8 @@ def build_config(raw: Mapping[str, Any]) -> AppConfig:
         )
     ):
         raise SchemaError("At least one training loss weight must be positive")
+    if not mcts.root_noise_only:
+        raise SchemaError("Only root-scoped MCTS noise is supported")
     return AppConfig(
         project=project,
         rules=rules,
@@ -303,10 +308,13 @@ def _build_mcts(raw: Mapping[str, Any]) -> MctsConfig:
             "training_simulations",
             "evaluation_simulations",
             "c_puct",
+            "root_noise_enabled",
+            "root_noise_only",
             "dirichlet_alpha",
             "dirichlet_epsilon",
             "virtual_loss",
-            "inference_batch_size",
+            "fpu_reduction",
+            "max_inference_batch_size",
             "stochastic_plies",
             "opening_temperature",
             "endgame_temperature",
@@ -317,6 +325,8 @@ def _build_mcts(raw: Mapping[str, Any]) -> MctsConfig:
         training_simulations=_positive_int(raw, "training_simulations", "mcts"),
         evaluation_simulations=_positive_int(raw, "evaluation_simulations", "mcts"),
         c_puct=_positive_float(raw, "c_puct", "mcts"),
+        root_noise_enabled=_bool(raw, "root_noise_enabled", "mcts"),
+        root_noise_only=_bool(raw, "root_noise_only", "mcts"),
         dirichlet_alpha=_positive_float(raw, "dirichlet_alpha", "mcts"),
         dirichlet_epsilon=_bounded_float(
             raw,
@@ -326,7 +336,8 @@ def _build_mcts(raw: Mapping[str, Any]) -> MctsConfig:
             upper_bound=1.0,
         ),
         virtual_loss=_positive_int(raw, "virtual_loss", "mcts"),
-        inference_batch_size=_positive_int(raw, "inference_batch_size", "mcts"),
+        fpu_reduction=_nonnegative_float(raw, "fpu_reduction", "mcts"),
+        max_inference_batch_size=_positive_int(raw, "max_inference_batch_size", "mcts"),
         stochastic_plies=_nonnegative_int(raw, "stochastic_plies", "mcts"),
         opening_temperature=_positive_float(raw, "opening_temperature", "mcts"),
         endgame_temperature=_nonnegative_float(raw, "endgame_temperature", "mcts"),

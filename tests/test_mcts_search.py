@@ -51,7 +51,7 @@ def test_evaluation_search_completes_exact_simulations_in_real_batches() -> None
     mcts_config = replace(
         config.mcts,
         evaluation_simulations=8,
-        inference_batch_size=4,
+        max_inference_batch_size=4,
     )
     evaluator = RecordingEvaluator()
     state = GameEnvironment(config.rules).state
@@ -83,7 +83,7 @@ def test_training_search_applies_reproducible_root_noise() -> None:
     mcts_config = replace(
         config.mcts,
         training_simulations=4,
-        inference_batch_size=4,
+        max_inference_batch_size=4,
     )
     state = GameEnvironment(config.rules).state
 
@@ -106,6 +106,27 @@ def test_training_search_applies_reproducible_root_noise() -> None:
     assert sum(first.action_probabilities) == pytest.approx(1.0)
 
 
+def test_training_search_can_disable_root_noise_without_rng() -> None:
+    """The canonical root-noise switch is the only source of noise behavior."""
+
+    config = load_config()
+    mcts_config = replace(
+        config.mcts,
+        training_simulations=4,
+        max_inference_batch_size=4,
+        root_noise_enabled=False,
+    )
+    state = GameEnvironment(config.rules).state
+
+    result = MctsSearch(config.rules, mcts_config, RecordingEvaluator()).run(
+        state, SearchMode.TRAINING
+    )
+
+    assert result.root_priors == pytest.approx(
+        (1.0 / state.action_size,) * state.action_size
+    )
+
+
 def test_terminal_leaf_uses_official_score_without_neural_evaluation() -> None:
     """A one-cell game backs up Black's official win from White's leaf view."""
 
@@ -114,7 +135,7 @@ def test_terminal_leaf_uses_official_score_without_neural_evaluation() -> None:
     mcts_config = replace(
         config.mcts,
         evaluation_simulations=5,
-        inference_batch_size=4,
+        max_inference_batch_size=4,
     )
     evaluator = RecordingEvaluator(value=-1.0)
 
@@ -138,7 +159,7 @@ def test_neural_value_is_negated_from_child_to_root_perspective() -> None:
     mcts_config = replace(
         config.mcts,
         evaluation_simulations=1,
-        inference_batch_size=1,
+        max_inference_batch_size=1,
     )
 
     result = MctsSearch(config.rules, mcts_config, RecordingEvaluator(value=1.0)).run(
@@ -175,7 +196,7 @@ def test_invalid_leaf_evaluation_is_rejected() -> None:
     mcts_config = replace(
         config.mcts,
         evaluation_simulations=2,
-        inference_batch_size=2,
+        max_inference_batch_size=2,
     )
 
     with pytest.raises(InvalidEvaluationError, match="illegal"):
