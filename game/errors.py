@@ -15,3 +15,15 @@ class IllegalMoveError(BoardError):
 
 class UndoError(BoardError):
     """Raised when undo is requested without a move to restore."""
+
+
+class ScoringError(BoardError):
+    """Base class for terminal-scoring failures."""
+
+
+class NonTerminalBoardError(ScoringError):
+    """Raised when official scoring is requested before the game ends."""
+
+
+class UnsupportedScoringRuleError(ScoringError):
+    """Raised when a board requests scoring semantics not implemented here."""

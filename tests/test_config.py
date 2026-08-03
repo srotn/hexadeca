@@ -25,6 +25,7 @@ def test_default_config_matches_confirmed_project_parameters() -> None:
     assert config.replay.capacity_positions == 200_000
     assert config.training.batch_size == 256
     assert config.benchmark.board_measurement_iterations == 10_000
+    assert config.benchmark.scoring_measurement_iterations == 1_000
 
 
 def test_profile_and_overrides_are_applied_in_precedence_order(

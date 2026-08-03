@@ -6,6 +6,12 @@ Run the Stage 3 reference-board benchmark from the repository root:
 .\.venv\Scripts\python -m benchmark.board_engine
 ```
 
+Run the Stage 4 exact-scoring benchmark:
+
+```powershell
+.\.venv\Scripts\python -m benchmark.scoring
+```
+
 Warm-up count, measurement count, position depth, and random seed come from the
-merged project configuration. The command writes a machine-readable report to
-`benchmark-results/stage3-board.json` by default.
+merged project configuration. The commands write machine-readable reports to
+the configured benchmark-results directory.

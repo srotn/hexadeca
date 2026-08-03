@@ -89,6 +89,8 @@ class BenchmarkConfig:
     board_warmup_iterations: int
     board_measurement_iterations: int
     board_position_plies: int
+    scoring_warmup_iterations: int
+    scoring_measurement_iterations: int
     random_seed: int
 
 
@@ -278,6 +280,8 @@ def _build_benchmark(raw: Mapping[str, Any]) -> BenchmarkConfig:
             "board_warmup_iterations",
             "board_measurement_iterations",
             "board_position_plies",
+            "scoring_warmup_iterations",
+            "scoring_measurement_iterations",
             "random_seed",
         },
         "benchmark",
@@ -290,6 +294,12 @@ def _build_benchmark(raw: Mapping[str, Any]) -> BenchmarkConfig:
             raw, "board_measurement_iterations", "benchmark"
         ),
         board_position_plies=_nonnegative_int(raw, "board_position_plies", "benchmark"),
+        scoring_warmup_iterations=_nonnegative_int(
+            raw, "scoring_warmup_iterations", "benchmark"
+        ),
+        scoring_measurement_iterations=_positive_int(
+            raw, "scoring_measurement_iterations", "benchmark"
+        ),
         random_seed=_nonnegative_int(raw, "random_seed", "benchmark"),
     )
 

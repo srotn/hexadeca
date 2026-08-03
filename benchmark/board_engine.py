@@ -3,16 +3,14 @@
 from __future__ import annotations
 
 import argparse
-import gc
 import json
 import platform
 import random
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
-from statistics import median
-from time import perf_counter_ns
 
+from benchmark.timing import measure_operation
 from config import load_config
 from config.schema import RulesConfig
 from game import Board
@@ -59,13 +57,13 @@ def run_board_benchmarks(
         return None
 
     results = {
-        "board_construction": _measure(
+        "board_construction": measure_operation(
             construct_board, warmup_iterations, measurement_iterations
         ),
-        "legal_action_generation": _measure(
+        "legal_action_generation": measure_operation(
             generate_legal_actions, warmup_iterations, measurement_iterations
         ),
-        "apply_undo_cycle": _measure(
+        "apply_undo_cycle": measure_operation(
             apply_undo_cycle, warmup_iterations, measurement_iterations
         ),
     }
@@ -112,37 +110,6 @@ def _build_position(rules: RulesConfig, target_plies: int, seed: int) -> Board:
         legal_actions = board.legal_actions()
         board.apply(random_source.choice(legal_actions))
     return board
-
-
-def _measure(
-    operation: Callable[[], object], warmup_iterations: int, iterations: int
-) -> dict[str, int | float]:
-    for _ in range(warmup_iterations):
-        operation()
-
-    samples: list[int] = []
-    garbage_collection_enabled = gc.isenabled()
-    if garbage_collection_enabled:
-        gc.disable()
-    try:
-        total_start = perf_counter_ns()
-        for _ in range(iterations):
-            sample_start = perf_counter_ns()
-            operation()
-            samples.append(perf_counter_ns() - sample_start)
-        total_nanoseconds = perf_counter_ns() - total_start
-    finally:
-        if garbage_collection_enabled:
-            gc.enable()
-
-    sorted_samples = sorted(samples)
-    percentile_index = max(0, (95 * len(sorted_samples) + 99) // 100 - 1)
-    return {
-        "iterations": iterations,
-        "median_ns": float(median(sorted_samples)),
-        "p95_ns": sorted_samples[percentile_index],
-        "throughput_ops_per_second": iterations * 1_000_000_000 / total_nanoseconds,
-    }
 
 
 def _parse_arguments(arguments: Sequence[str] | None = None) -> argparse.Namespace:
