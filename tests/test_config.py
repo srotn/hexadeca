@@ -14,7 +14,7 @@ def test_default_config_matches_confirmed_project_parameters() -> None:
 
     config = load_config()
 
-    assert config.project.config_schema_version == 3
+    assert config.project.config_schema_version == 4
     assert config.rules.board_size == 16
     assert config.rules.score_occupied_cells is True
     assert config.rules.action_size == 256
@@ -36,7 +36,15 @@ def test_default_config_matches_confirmed_project_parameters() -> None:
     assert config.mcts.opening_temperature == 1.0
     assert config.mcts.endgame_temperature == 0.0
     assert config.replay.capacity_positions == 200_000
+    assert config.replay.persistence_enabled is True
+    assert config.replay.persistence_file_name == "replay.sqlite3"
+    assert config.replay.persistence_chunk_size == 1_024
     assert config.training.batch_size == 256
+    assert config.training.data_loader_shuffle is True
+    assert config.training.data_loader_workers == 0
+    assert config.training.data_loader_prefetch_factor == 2
+    assert config.training.data_loader_pin_memory is True
+    assert config.training.data_loader_drop_last is True
     assert config.training.policy_loss_weight == 1.0
     assert config.benchmark.board_measurement_iterations == 10_000
     assert config.benchmark.scoring_measurement_iterations == 1_000
@@ -45,6 +53,8 @@ def test_default_config_matches_confirmed_project_parameters() -> None:
     assert config.benchmark.mcts_warmup_iterations == 2
     assert config.benchmark.mcts_measurement_iterations == 5
     assert config.benchmark.mcts_benchmark_simulations == 800
+    assert config.benchmark.replay_benchmark_positions == 4_096
+    assert config.benchmark.replay_benchmark_batch_size == 256
 
 
 def test_profile_and_overrides_are_applied_in_precedence_order(
@@ -119,6 +129,29 @@ def test_invalid_mcts_parallelism_parameters_are_rejected(
     override: dict[str, object], message: str
 ) -> None:
     """Noise and virtual batch controls fail during unified config loading."""
+
+    with pytest.raises(ConfigError, match=message):
+        load_config(overrides=override)
+
+
+@pytest.mark.parametrize(
+    ("override", "message"),
+    [
+        ({"replay.persistence_file_name": "../replay.sqlite3"}, ".sqlite3 file"),
+        ({"replay.persistence_chunk_size": 0}, "greater than zero"),
+        ({"training.data_loader_workers": -1}, "zero or greater"),
+        ({"training.data_loader_prefetch_factor": 0}, "greater than zero"),
+        ({"training.batch_size": 200_001}, "must not exceed replay"),
+        (
+            {"benchmark.replay_benchmark_batch_size": 4_097},
+            "must not exceed benchmark positions",
+        ),
+    ],
+)
+def test_invalid_replay_and_loader_parameters_are_rejected(
+    override: dict[str, object], message: str
+) -> None:
+    """Stage 8 storage and loading controls fail at unified config loading."""
 
     with pytest.raises(ConfigError, match=message):
         load_config(overrides=override)

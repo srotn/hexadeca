@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, TypeVar
 
 _T = TypeVar("_T")
-CONFIG_SCHEMA_VERSION = 3
+CONFIG_SCHEMA_VERSION = 4
 
 
 class SchemaError(ValueError):
@@ -87,6 +87,9 @@ class ReplayConfig:
     """Replay-buffer capacity settings."""
 
     capacity_positions: int
+    persistence_enabled: bool
+    persistence_file_name: str
+    persistence_chunk_size: int
 
 
 @dataclass(frozen=True)
@@ -96,6 +99,11 @@ class TrainingConfig:
     optimizer: str
     learning_rate: float
     batch_size: int
+    data_loader_shuffle: bool
+    data_loader_workers: int
+    data_loader_prefetch_factor: int
+    data_loader_pin_memory: bool
+    data_loader_drop_last: bool
     policy_loss_weight: float
     win_loss_weight: float
     black_score_loss_weight: float
@@ -120,6 +128,10 @@ class BenchmarkConfig:
     mcts_warmup_iterations: int
     mcts_measurement_iterations: int
     mcts_benchmark_simulations: int
+    replay_warmup_iterations: int
+    replay_measurement_iterations: int
+    replay_benchmark_positions: int
+    replay_benchmark_batch_size: int
     random_seed: int
 
 
@@ -202,6 +214,12 @@ def build_config(raw: Mapping[str, Any]) -> AppConfig:
         raise SchemaError("At least one training loss weight must be positive")
     if not mcts.root_noise_only:
         raise SchemaError("Only root-scoped MCTS noise is supported")
+    if training.batch_size > replay.capacity_positions:
+        raise SchemaError("training.batch_size must not exceed replay capacity")
+    if benchmark.replay_benchmark_batch_size > benchmark.replay_benchmark_positions:
+        raise SchemaError(
+            "benchmark.replay_benchmark_batch_size must not exceed benchmark positions"
+        )
     return AppConfig(
         project=project,
         rules=rules,
@@ -345,9 +363,26 @@ def _build_mcts(raw: Mapping[str, Any]) -> MctsConfig:
 
 
 def _build_replay(raw: Mapping[str, Any]) -> ReplayConfig:
-    _reject_unknown(raw, {"capacity_positions"}, "replay")
+    _reject_unknown(
+        raw,
+        {
+            "capacity_positions",
+            "persistence_enabled",
+            "persistence_file_name",
+            "persistence_chunk_size",
+        },
+        "replay",
+    )
+    persistence_file_name = _string(raw, "persistence_file_name", "replay")
+    if Path(
+        persistence_file_name
+    ).name != persistence_file_name or not persistence_file_name.endswith(".sqlite3"):
+        raise SchemaError("replay.persistence_file_name must be a .sqlite3 file name")
     return ReplayConfig(
-        capacity_positions=_positive_int(raw, "capacity_positions", "replay")
+        capacity_positions=_positive_int(raw, "capacity_positions", "replay"),
+        persistence_enabled=_bool(raw, "persistence_enabled", "replay"),
+        persistence_file_name=persistence_file_name,
+        persistence_chunk_size=_positive_int(raw, "persistence_chunk_size", "replay"),
     )
 
 
@@ -358,6 +393,11 @@ def _build_training(raw: Mapping[str, Any]) -> TrainingConfig:
             "optimizer",
             "learning_rate",
             "batch_size",
+            "data_loader_shuffle",
+            "data_loader_workers",
+            "data_loader_prefetch_factor",
+            "data_loader_pin_memory",
+            "data_loader_drop_last",
             "policy_loss_weight",
             "win_loss_weight",
             "black_score_loss_weight",
@@ -369,6 +409,13 @@ def _build_training(raw: Mapping[str, Any]) -> TrainingConfig:
         optimizer=_choice(raw, "optimizer", "training", {"adamw"}),
         learning_rate=_positive_float(raw, "learning_rate", "training"),
         batch_size=_positive_int(raw, "batch_size", "training"),
+        data_loader_shuffle=_bool(raw, "data_loader_shuffle", "training"),
+        data_loader_workers=_nonnegative_int(raw, "data_loader_workers", "training"),
+        data_loader_prefetch_factor=_positive_int(
+            raw, "data_loader_prefetch_factor", "training"
+        ),
+        data_loader_pin_memory=_bool(raw, "data_loader_pin_memory", "training"),
+        data_loader_drop_last=_bool(raw, "data_loader_drop_last", "training"),
         policy_loss_weight=_nonnegative_float(raw, "policy_loss_weight", "training"),
         win_loss_weight=_nonnegative_float(raw, "win_loss_weight", "training"),
         black_score_loss_weight=_nonnegative_float(
@@ -398,6 +445,10 @@ def _build_benchmark(raw: Mapping[str, Any]) -> BenchmarkConfig:
             "mcts_warmup_iterations",
             "mcts_measurement_iterations",
             "mcts_benchmark_simulations",
+            "replay_warmup_iterations",
+            "replay_measurement_iterations",
+            "replay_benchmark_positions",
+            "replay_benchmark_batch_size",
             "random_seed",
         },
         "benchmark",
@@ -442,6 +493,18 @@ def _build_benchmark(raw: Mapping[str, Any]) -> BenchmarkConfig:
         ),
         mcts_benchmark_simulations=_positive_int(
             raw, "mcts_benchmark_simulations", "benchmark"
+        ),
+        replay_warmup_iterations=_nonnegative_int(
+            raw, "replay_warmup_iterations", "benchmark"
+        ),
+        replay_measurement_iterations=_positive_int(
+            raw, "replay_measurement_iterations", "benchmark"
+        ),
+        replay_benchmark_positions=_positive_int(
+            raw, "replay_benchmark_positions", "benchmark"
+        ),
+        replay_benchmark_batch_size=_positive_int(
+            raw, "replay_benchmark_batch_size", "benchmark"
         ),
         random_seed=_nonnegative_int(raw, "random_seed", "benchmark"),
     )

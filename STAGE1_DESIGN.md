@@ -286,10 +286,18 @@ new immutable checkpoint after its validation gates pass.
 
 A checkpoint includes model parameters, optimizer state, scheduler state,
 iteration, RNG states where possible, configuration snapshot, ruleset and
-feature schema, metrics, and parent/checkpoint provenance. Replay persistence
-is optional and separately configurable because it materially affects restart
-time and disk usage. `latest` supports crash recovery; `best` changes only
-after the evaluation gate accepts a candidate.
+feature schema, metrics, and parent/checkpoint provenance. Stage 8 selects a
+versioned SQLite full-snapshot format for replay persistence. It is enabled by
+default but separately configurable because it materially affects restart time
+and disk usage. A snapshot is written to a temporary sibling, validated, and
+atomically published; capacity reductions retain the newest positions and are
+reported explicitly.
+
+Checkpoint persistence uses immutable bundle directories with a human-readable
+JSON manifest and a checksummed PyTorch tensor-state file loaded with
+`weights_only`. Small atomic pointers implement `latest` for crash recovery and
+`best` for candidates accepted by the later evaluation gate. Bundle history is
+never overwritten by alias publication.
 
 ## 6. Configuration, observability, and reproducibility
 
@@ -442,4 +450,3 @@ the Stage 1 design, but must be decided before their implementation stages:
    (before Stage 11).
 3. Deployment domain/TLS provider and authentication mechanism (before Stage
    13).
-4. Replay-buffer persistence policy for production restarts (before Stage 8).

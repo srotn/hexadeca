@@ -21,7 +21,15 @@ dev = [
 ]
 
 [tool.setuptools.packages.find]
-include = ["benchmark*", "config*", "game*", "mcts*", "network*", "utils*"]
+include = [
+  "benchmark*",
+  "config*",
+  "game*",
+  "mcts*",
+  "network*",
+  "training*",
+  "utils*",
+]
 
 [tool.setuptools.package-data]
 config = ["*.toml"]
@@ -38,10 +46,18 @@ target-version = "py311"
 select = ["E", "F", "I", "N", "B", "UP", "SIM", "RUF"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["benchmark", "config", "game", "mcts", "network", "utils"]
+known-first-party = [
+  "benchmark",
+  "config",
+  "game",
+  "mcts",
+  "network",
+  "training",
+  "utils",
+]
 
 [tool.mypy]
 python_version = "3.11"
 strict = true
-files = ["benchmark", "config", "game", "mcts", "network", "utils"]
+files = ["benchmark", "config", "game", "mcts", "network", "training", "utils"]
 warn_unused_configs = true

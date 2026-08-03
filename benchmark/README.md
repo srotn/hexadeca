@@ -37,6 +37,17 @@ Run the Stage 7 Python-core and CUDA AMP neural-MCTS benchmark:
 The report distinguishes complete searches per second, simulations per second,
 and the actual average/maximum neural inference batch formed by the tree.
 
+Run the Stage 8 replay, collation, and SQLite persistence benchmark:
+
+```powershell
+.\.venv\Scripts\python -m benchmark.replay
+```
+
+The report measures ring insertion, uniform sampling without replacement,
+feature/target collation, complete SQLite snapshot writes, and validated
+restores in positions per second. It also records database bytes per retained
+position.
+
 Warm-up count, measurement count, position depth, and random seed come from the
 merged project configuration. The commands write machine-readable reports to
 the configured benchmark-results directory.

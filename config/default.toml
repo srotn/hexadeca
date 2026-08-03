@@ -1,6 +1,6 @@
 [project]
 name = "hexadeca-alpha-zero"
-config_schema_version = 3
+config_schema_version = 4
 
 [rules]
 ruleset_id = "hexadeca-v1"
@@ -44,11 +44,19 @@ endgame_temperature = 0.0
 
 [replay]
 capacity_positions = 200000
+persistence_enabled = true
+persistence_file_name = "replay.sqlite3"
+persistence_chunk_size = 1024
 
 [training]
 optimizer = "adamw"
 learning_rate = 0.0003
 batch_size = 256
+data_loader_shuffle = true
+data_loader_workers = 0
+data_loader_prefetch_factor = 2
+data_loader_pin_memory = true
+data_loader_drop_last = true
 policy_loss_weight = 1.0
 win_loss_weight = 1.0
 black_score_loss_weight = 1.0
@@ -69,6 +77,10 @@ network_gpu_batch_sizes = [1, 32, 256]
 mcts_warmup_iterations = 2
 mcts_measurement_iterations = 5
 mcts_benchmark_simulations = 800
+replay_warmup_iterations = 1
+replay_measurement_iterations = 5
+replay_benchmark_positions = 4096
+replay_benchmark_batch_size = 256
 random_seed = 20260803
 
 [paths]
