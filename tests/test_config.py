@@ -14,7 +14,7 @@ def test_default_config_matches_confirmed_project_parameters() -> None:
 
     config = load_config()
 
-    assert config.project.config_schema_version == 4
+    assert config.project.config_schema_version == 5
     assert config.rules.board_size == 16
     assert config.rules.score_occupied_cells is True
     assert config.rules.action_size == 256
@@ -39,6 +39,14 @@ def test_default_config_matches_confirmed_project_parameters() -> None:
     assert config.replay.persistence_enabled is True
     assert config.replay.persistence_file_name == "replay.sqlite3"
     assert config.replay.persistence_chunk_size == 1_024
+    assert config.self_play.games_per_iteration == 32
+    assert config.self_play.worker_processes == 4
+    assert config.self_play.worker_torch_threads == 1
+    assert config.self_play.inference_max_batch_size == 256
+    assert config.self_play.inference_batch_wait_seconds == 0.002
+    assert config.self_play.inference_response_timeout_seconds == 120.0
+    assert config.self_play.worker_shutdown_timeout_seconds == 10.0
+    assert config.self_play.random_seed == 20_260_803
     assert config.training.batch_size == 256
     assert config.training.data_loader_shuffle is True
     assert config.training.data_loader_workers == 0
@@ -55,6 +63,8 @@ def test_default_config_matches_confirmed_project_parameters() -> None:
     assert config.benchmark.mcts_benchmark_simulations == 800
     assert config.benchmark.replay_benchmark_positions == 4_096
     assert config.benchmark.replay_benchmark_batch_size == 256
+    assert config.benchmark.self_play_benchmark_games == 4
+    assert config.benchmark.self_play_benchmark_simulations == 64
 
 
 def test_profile_and_overrides_are_applied_in_precedence_order(
@@ -152,6 +162,31 @@ def test_invalid_replay_and_loader_parameters_are_rejected(
     override: dict[str, object], message: str
 ) -> None:
     """Stage 8 storage and loading controls fail at unified config loading."""
+
+    with pytest.raises(ConfigError, match=message):
+        load_config(overrides=override)
+
+
+@pytest.mark.parametrize(
+    ("override", "message"),
+    [
+        ({"self_play.games_per_iteration": 0}, "greater than zero"),
+        ({"self_play.worker_processes": 0}, "greater than zero"),
+        ({"self_play.worker_torch_threads": 0}, "greater than zero"),
+        ({"self_play.inference_batch_wait_seconds": 0.0}, "positive"),
+        ({"self_play.inference_response_timeout_seconds": 0.0}, "positive"),
+        ({"self_play.worker_shutdown_timeout_seconds": 0.0}, "positive"),
+        ({"self_play.random_seed": -1}, "zero or greater"),
+        (
+            {"self_play.inference_max_batch_size": 31},
+            "at least the MCTS batch size",
+        ),
+    ],
+)
+def test_invalid_self_play_parameters_are_rejected(
+    override: dict[str, object], message: str
+) -> None:
+    """Worker, batching, timeout, and seed controls fail during config load."""
 
     with pytest.raises(ConfigError, match=message):
         load_config(overrides=override)

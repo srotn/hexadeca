@@ -279,10 +279,14 @@ the feature tensor, its 256-element root visit distribution, final outcome
 from the position player's perspective, final raw scores, and ruleset/feature
 schema identifiers. It is fully populated only after the game terminates.
 
-Self-play workers generate games with the active candidate model, record the
-root visit distribution before action sampling, then append finalized examples
-atomically. The trainer samples only valid, compatible examples and publishes a
-new immutable checkpoint after its validation gates pass.
+Self-play workers own isolated game environments, MCTS trees, and deterministic
+per-game random streams. The main process exclusively owns the active candidate
+model and aggregates worker evaluation requests for centralized CPU/GPU batch
+inference. Workers record the root visit distribution before action sampling;
+completed games are validated, ordered by stable game index, and appended to
+Replay only through an explicit all-or-nothing batch commit. The trainer samples
+only valid, compatible examples and publishes a new immutable checkpoint after
+its validation gates pass.
 
 A checkpoint includes model parameters, optimizer state, scheduler state,
 iteration, RNG states where possible, configuration snapshot, ruleset and

@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, TypeVar
 
 _T = TypeVar("_T")
-CONFIG_SCHEMA_VERSION = 4
+CONFIG_SCHEMA_VERSION = 5
 
 
 class SchemaError(ValueError):
@@ -93,6 +93,20 @@ class ReplayConfig:
 
 
 @dataclass(frozen=True)
+class SelfPlayConfig:
+    """Multiprocess self-play and centralized inference controls."""
+
+    games_per_iteration: int
+    worker_processes: int
+    worker_torch_threads: int
+    inference_max_batch_size: int
+    inference_batch_wait_seconds: float
+    inference_response_timeout_seconds: float
+    worker_shutdown_timeout_seconds: float
+    random_seed: int
+
+
+@dataclass(frozen=True)
 class TrainingConfig:
     """Confirmed optimizer and batch settings."""
 
@@ -132,6 +146,8 @@ class BenchmarkConfig:
     replay_measurement_iterations: int
     replay_benchmark_positions: int
     replay_benchmark_batch_size: int
+    self_play_benchmark_games: int
+    self_play_benchmark_simulations: int
     random_seed: int
 
 
@@ -164,6 +180,7 @@ class AppConfig:
     network: NetworkConfig
     mcts: MctsConfig
     replay: ReplayConfig
+    self_play: SelfPlayConfig
     training: TrainingConfig
     benchmark: BenchmarkConfig
     paths: PathsConfig
@@ -181,6 +198,7 @@ def build_config(raw: Mapping[str, Any]) -> AppConfig:
             "network",
             "mcts",
             "replay",
+            "self_play",
             "training",
             "benchmark",
             "paths",
@@ -193,6 +211,7 @@ def build_config(raw: Mapping[str, Any]) -> AppConfig:
     network = _build_network(_section(raw, "network"))
     mcts = _build_mcts(_section(raw, "mcts"))
     replay = _build_replay(_section(raw, "replay"))
+    self_play = _build_self_play(_section(raw, "self_play"))
     training = _build_training(_section(raw, "training"))
     benchmark = _build_benchmark(_section(raw, "benchmark"))
     paths = _build_paths(_section(raw, "paths"))
@@ -220,12 +239,17 @@ def build_config(raw: Mapping[str, Any]) -> AppConfig:
         raise SchemaError(
             "benchmark.replay_benchmark_batch_size must not exceed benchmark positions"
         )
+    if self_play.inference_max_batch_size < mcts.max_inference_batch_size:
+        raise SchemaError(
+            "self_play.inference_max_batch_size must be at least the MCTS batch size"
+        )
     return AppConfig(
         project=project,
         rules=rules,
         network=network,
         mcts=mcts,
         replay=replay,
+        self_play=self_play,
         training=training,
         benchmark=benchmark,
         paths=paths,
@@ -386,6 +410,41 @@ def _build_replay(raw: Mapping[str, Any]) -> ReplayConfig:
     )
 
 
+def _build_self_play(raw: Mapping[str, Any]) -> SelfPlayConfig:
+    _reject_unknown(
+        raw,
+        {
+            "games_per_iteration",
+            "worker_processes",
+            "worker_torch_threads",
+            "inference_max_batch_size",
+            "inference_batch_wait_seconds",
+            "inference_response_timeout_seconds",
+            "worker_shutdown_timeout_seconds",
+            "random_seed",
+        },
+        "self_play",
+    )
+    return SelfPlayConfig(
+        games_per_iteration=_positive_int(raw, "games_per_iteration", "self_play"),
+        worker_processes=_positive_int(raw, "worker_processes", "self_play"),
+        worker_torch_threads=_positive_int(raw, "worker_torch_threads", "self_play"),
+        inference_max_batch_size=_positive_int(
+            raw, "inference_max_batch_size", "self_play"
+        ),
+        inference_batch_wait_seconds=_positive_float(
+            raw, "inference_batch_wait_seconds", "self_play"
+        ),
+        inference_response_timeout_seconds=_positive_float(
+            raw, "inference_response_timeout_seconds", "self_play"
+        ),
+        worker_shutdown_timeout_seconds=_positive_float(
+            raw, "worker_shutdown_timeout_seconds", "self_play"
+        ),
+        random_seed=_nonnegative_int(raw, "random_seed", "self_play"),
+    )
+
+
 def _build_training(raw: Mapping[str, Any]) -> TrainingConfig:
     _reject_unknown(
         raw,
@@ -449,6 +508,8 @@ def _build_benchmark(raw: Mapping[str, Any]) -> BenchmarkConfig:
             "replay_measurement_iterations",
             "replay_benchmark_positions",
             "replay_benchmark_batch_size",
+            "self_play_benchmark_games",
+            "self_play_benchmark_simulations",
             "random_seed",
         },
         "benchmark",
@@ -505,6 +566,12 @@ def _build_benchmark(raw: Mapping[str, Any]) -> BenchmarkConfig:
         ),
         replay_benchmark_batch_size=_positive_int(
             raw, "replay_benchmark_batch_size", "benchmark"
+        ),
+        self_play_benchmark_games=_positive_int(
+            raw, "self_play_benchmark_games", "benchmark"
+        ),
+        self_play_benchmark_simulations=_positive_int(
+            raw, "self_play_benchmark_simulations", "benchmark"
         ),
         random_seed=_nonnegative_int(raw, "random_seed", "benchmark"),
     )

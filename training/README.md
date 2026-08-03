@@ -1,7 +1,29 @@
 # Training Module
 
-Stage 8 establishes three independent contracts used by later self-play and
-training orchestration.
+Stage 9 adds deterministic multiprocess self-play to the Stage 8 replay, data
+loading, and checkpoint contracts.
+
+## Self-play
+
+`SelfPlayCoordinator` starts workers with the cross-platform, CUDA-safe
+`spawn` method. Each worker exclusively owns its game environment, MCTS tree,
+and per-game random stream. The main process exclusively owns the active model
+and evaluator, aggregates worker requests up to the configured inference
+capacity, and returns evaluations in request order. CUDA models are therefore
+never copied into workers, and parallel games can share larger neural batches.
+
+Per-game seeds are derived from the master seed and stable game index with
+SplitMix64, so process scheduling and worker count do not reassign randomness.
+Completed games are validated by replaying their full action history through
+the authoritative environment, then ordered by game index. `SelfPlayBatch`
+does not mutate Replay automatically; its `commit` method validates and inserts
+the full flattened batch atomically. A worker or inference failure returns no
+batch and cannot partially update Replay.
+
+An optional move callback publishes immutable `SelfPlayProgress` records for
+later monitoring without giving the frontend ownership of game logic. Worker
+count, thread count, inference aggregation, timeouts, game count, and random
+seed all come from the unified configuration.
 
 ## Replay data
 
@@ -59,5 +81,5 @@ and PyTorch CPU/CUDA RNG state. Loading verifies metadata compatibility and the
 checksum before using PyTorch's restricted `weights_only` loader. Alias files
 are atomically replaced and never overwrite immutable bundle history.
 
-Self-play process ownership begins in Stage 9; the trainer lifecycle, optimizer
-construction, retention policy, and automatic save cadence begin in Stage 10.
+The trainer lifecycle, optimizer construction, retention policy, and automatic
+save cadence begin in Stage 10.

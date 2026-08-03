@@ -1,6 +1,6 @@
 [project]
 name = "hexadeca-alpha-zero"
-config_schema_version = 4
+config_schema_version = 5
 
 [rules]
 ruleset_id = "hexadeca-v1"
@@ -48,6 +48,16 @@ persistence_enabled = true
 persistence_file_name = "replay.sqlite3"
 persistence_chunk_size = 1024
 
+[self_play]
+games_per_iteration = 32
+worker_processes = 4
+worker_torch_threads = 1
+inference_max_batch_size = 256
+inference_batch_wait_seconds = 0.002
+inference_response_timeout_seconds = 120.0
+worker_shutdown_timeout_seconds = 10.0
+random_seed = 20260803
+
 [training]
 optimizer = "adamw"
 learning_rate = 0.0003
@@ -81,6 +91,8 @@ replay_warmup_iterations = 1
 replay_measurement_iterations = 5
 replay_benchmark_positions = 4096
 replay_benchmark_batch_size = 256
+self_play_benchmark_games = 4
+self_play_benchmark_simulations = 64
 random_seed = 20260803
 
 [paths]

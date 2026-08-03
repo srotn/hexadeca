@@ -48,6 +48,18 @@ feature/target collation, complete SQLite snapshot writes, and validated
 restores in positions per second. It also records database bytes per retained
 position.
 
-Warm-up count, measurement count, position depth, and random seed come from the
-merged project configuration. The commands write machine-readable reports to
-the configured benchmark-results directory.
+Run the Stage 9 end-to-end multiprocess self-play benchmark:
+
+```powershell
+.\.venv\Scripts\python -m benchmark.self_play
+```
+
+This uses the real configured ResNet and centralized `TorchBatchEvaluator`.
+CUDA AMP is selected when available; use `--cpu-only` to force CPU inference.
+The report includes worker startup and shutdown in wall-clock throughput and
+records games, generated positions, simulations, centralized inference calls,
+and actual average/maximum inference batch size.
+
+Applicable warm-up, measurement, position, game, simulation, and random-seed
+settings come from the merged project configuration. The commands write
+machine-readable reports to the configured benchmark-results directory.
