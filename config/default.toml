@@ -42,6 +42,8 @@ board_measurement_iterations = 10000
 board_position_plies = 32
 scoring_warmup_iterations = 100
 scoring_measurement_iterations = 1000
+environment_warmup_iterations = 100
+environment_measurement_iterations = 1000
 random_seed = 20260803
 
 [paths]

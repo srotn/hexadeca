@@ -84,13 +84,15 @@ class TrainingConfig:
 
 @dataclass(frozen=True)
 class BenchmarkConfig:
-    """Reproducible Stage 3 board benchmark settings."""
+    """Reproducible benchmark settings for implemented project stages."""
 
     board_warmup_iterations: int
     board_measurement_iterations: int
     board_position_plies: int
     scoring_warmup_iterations: int
     scoring_measurement_iterations: int
+    environment_warmup_iterations: int
+    environment_measurement_iterations: int
     random_seed: int
 
 
@@ -282,6 +284,8 @@ def _build_benchmark(raw: Mapping[str, Any]) -> BenchmarkConfig:
             "board_position_plies",
             "scoring_warmup_iterations",
             "scoring_measurement_iterations",
+            "environment_warmup_iterations",
+            "environment_measurement_iterations",
             "random_seed",
         },
         "benchmark",
@@ -299,6 +303,12 @@ def _build_benchmark(raw: Mapping[str, Any]) -> BenchmarkConfig:
         ),
         scoring_measurement_iterations=_positive_int(
             raw, "scoring_measurement_iterations", "benchmark"
+        ),
+        environment_warmup_iterations=_nonnegative_int(
+            raw, "environment_warmup_iterations", "benchmark"
+        ),
+        environment_measurement_iterations=_positive_int(
+            raw, "environment_measurement_iterations", "benchmark"
         ),
         random_seed=_nonnegative_int(raw, "random_seed", "benchmark"),
     )

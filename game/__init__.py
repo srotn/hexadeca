@@ -1,12 +1,15 @@
-"""Canonical Hexadeca board engine."""
+"""Canonical Hexadeca game engine and self-play environment."""
 
 from game.board import Board, Move, Player, decode_action, encode_action
+from game.environment import GameEnvironment, GameState, StepResult
 from game.errors import (
     BoardError,
+    GameEnvironmentError,
     IllegalMoveError,
     InvalidActionError,
     NonTerminalBoardError,
     ScoringError,
+    TerminalStateError,
     UndoError,
     UnsupportedScoringRuleError,
 )
@@ -16,6 +19,9 @@ __all__ = [
     "Board",
     "BoardError",
     "CellScore",
+    "GameEnvironment",
+    "GameEnvironmentError",
+    "GameState",
     "IllegalMoveError",
     "InvalidActionError",
     "Move",
@@ -23,6 +29,8 @@ __all__ = [
     "Player",
     "ScoreResult",
     "ScoringError",
+    "StepResult",
+    "TerminalStateError",
     "UndoError",
     "UnsupportedScoringRuleError",
     "decode_action",

@@ -27,3 +27,11 @@ class NonTerminalBoardError(ScoringError):
 
 class UnsupportedScoringRuleError(ScoringError):
     """Raised when a board requests scoring semantics not implemented here."""
+
+
+class GameEnvironmentError(BoardError):
+    """Base class for game-environment lifecycle failures."""
+
+
+class TerminalStateError(GameEnvironmentError):
+    """Raised when an action is requested after the game has ended."""

@@ -2,12 +2,12 @@
 
 This repository develops a neural-network-guided AlphaZero agent for the
 Hexadeca board game through gated stages. The current implementation is Stage
-4: a reversible reference board engine with exact terminal distance-layer
-scoring.
+5: a self-play-ready game environment backed by the reversible board and exact
+terminal scoring engine.
 
 The authoritative requirements and architecture are documented in
-[`STAGE1_DESIGN.md`](STAGE1_DESIGN.md). The game environment, MCTS, and
-neural-network implementation remain deliberately absent until their stages.
+[`STAGE1_DESIGN.md`](STAGE1_DESIGN.md). MCTS and neural-network implementation
+remain deliberately absent until their respective stages.
 
 ## Local setup
 
@@ -38,13 +38,19 @@ Run the configured Stage 4 scoring benchmark:
 .\.venv\Scripts\python -m benchmark.scoring
 ```
 
+Run the configured Stage 5 environment benchmark:
+
+```powershell
+.\.venv\Scripts\python -m benchmark.environment
+```
+
 ## Repository layout
 
 ```text
 benchmark/  Reproducible benchmark scripts and reports.
 config/     Versioned TOML configuration and validation.
 cpp/        Reserved for profile-validated C++20 acceleration.
-game/       Canonical board, undo, legal-move, hashing, and scoring engine.
+game/       Board, scoring, and immutable self-play environment contracts.
 mcts/       Reserved for neural MCTS (Stage 7).
 network/    Reserved for the policy-value network (Stage 6).
 tests/      Unit and integration tests.
