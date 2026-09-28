@@ -386,7 +386,9 @@ def test_old_champion_interactive_move_is_legal(tmp_path: Path) -> None:
         / "hexadeca_with_computer.py"
     )
     if not source.is_file():
-        pytest.skip("the legacy old-champion source is excluded from the public release")
+        pytest.skip(
+            "the legacy old-champion source is excluded from the public release"
+        )
     (old_directory / source.name).write_bytes(source.read_bytes())
     state = GameEnvironment(config.rules).state
 
