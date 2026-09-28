@@ -8,6 +8,8 @@ from functools import lru_cache
 from config.schema import RulesConfig
 from game.board import Board, Player, decode_action
 from game.errors import NonTerminalBoardError, UnsupportedScoringRuleError
+from native import is_available
+from native import score_cells as native_score_cells
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,15 +65,24 @@ def score_terminal(board: Board) -> ScoreResult:
         raise NonTerminalBoardError("Official scoring requires a terminal board")
     _validate_scoring_rules(board.rules)
 
-    cells = board.cells
-    stones = _collect_stones(cells)
-    distances = _distance_table(board.size)
-    cell_scores = tuple(
-        _score_cell(action, board.size, stones, distances)
-        for action in range(board.action_size)
-    )
-    black_score = sum(cell.points for cell in cell_scores if cell.owner is Player.BLACK)
-    white_score = sum(cell.points for cell in cell_scores if cell.owner is Player.WHITE)
+    if is_available():
+        native_result = _native_score(board.cells, board.size)
+        cell_scores = native_result[2]
+        black_score, white_score = native_result[:2]
+    else:
+        cells = board.cells
+        stones = _collect_stones(cells)
+        distances = _distance_table(board.size)
+        cell_scores = tuple(
+            _score_cell(action, board.size, stones, distances)
+            for action in range(board.action_size)
+        )
+        black_score = sum(
+            cell.points for cell in cell_scores if cell.owner is Player.BLACK
+        )
+        white_score = sum(
+            cell.points for cell in cell_scores if cell.owner is Player.WHITE
+        )
     return ScoreResult(
         ruleset_id=board.rules.ruleset_id,
         zobrist_hash=board.zobrist_hash,
@@ -86,12 +97,36 @@ def score_cell(board: Board, action: int) -> CellScore:
 
     _validate_scoring_rules(board.rules)
     decode_action(action, board.size)
+    if is_available():
+        return _native_score(board.cells, board.size)[2][action]
     return _score_cell(
         action,
         board.size,
         _collect_stones(board.cells),
         _distance_table(board.size),
     )
+
+
+def _native_score(
+    cells: tuple[int, ...], board_size: int
+) -> tuple[int, int, tuple[CellScore, ...]]:
+    """Convert the exact native scoring result into the stable Python DTOs."""
+
+    if native_score_cells is None:
+        raise RuntimeError("Native scorer was selected but is unavailable")
+    result = native_score_cells(cells, board_size)
+    cell_scores = tuple(
+        CellScore(
+            action=action,
+            owner=None if owner == 0 else Player(owner),
+            points=0 if owner == 0 else 1,
+            decisive_distance_squared=(None if distance < 0 else int(distance)),
+        )
+        for action, (owner, distance) in enumerate(
+            zip(result.owners, result.distances, strict=True)
+        )
+    )
+    return int(result.black_score), int(result.white_score), cell_scores
 
 
 def _score_cell(

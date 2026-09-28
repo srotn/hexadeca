@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import replace
 from pathlib import Path
 
@@ -21,6 +22,7 @@ from training import (
     Trainer,
     TrainerStateError,
     TrainingBatchMetrics,
+    restart_cosine_multiplier,
     warmup_cosine_multiplier,
 )
 
@@ -62,6 +64,14 @@ def _small_config(
         scheduler_minimum_learning_rate=0.0001,
         scheduler_warmup_steps=2,
         scheduler_decay_steps=4,
+        scheduler_restart=replace(
+            config.training.scheduler_restart,
+            initial_learning_rate=0.0002,
+            peak_learning_rate=0.0005,
+            warmup_steps=2,
+            decay_steps=4,
+            minimum_learning_rate=0.0001,
+        ),
         batch_size=2,
         batches_per_iteration=batches_per_iteration,
         minimum_replay_positions=2,
@@ -120,6 +130,30 @@ def test_warmup_cosine_schedule_has_exact_boundaries() -> None:
         warmup_cosine_multiplier(-1, config)
 
 
+def test_scheduler_restart_schedule_has_exact_boundaries() -> None:
+    """Recovery warmup starts at the floor and decays back to it exactly."""
+
+    restart = replace(
+        _small_config(checkpoint_interval=0).training.scheduler_restart,
+        enabled=True,
+        checkpoint_id="iteration-000001",
+        initial_learning_rate=0.0001,
+        peak_learning_rate=0.001,
+        warmup_steps=2,
+        decay_steps=4,
+        minimum_learning_rate=0.0001,
+    )
+
+    assert restart_cosine_multiplier(0, restart) == pytest.approx(0.1)
+    assert restart_cosine_multiplier(1, restart) == pytest.approx(0.55)
+    assert restart_cosine_multiplier(2, restart) == pytest.approx(1.0)
+    assert restart_cosine_multiplier(4, restart) == pytest.approx(0.55)
+    assert restart_cosine_multiplier(6, restart) == pytest.approx(0.1)
+    assert restart_cosine_multiplier(100, restart) == pytest.approx(0.1)
+    with pytest.raises(ValueError, match="nonnegative"):
+        restart_cosine_multiplier(-1, restart)
+
+
 def test_training_iteration_updates_model_metrics_and_checkpoint(
     tmp_path: Path,
 ) -> None:
@@ -160,6 +194,9 @@ def test_training_iteration_updates_model_metrics_and_checkpoint(
     assert len(callbacks) == 3
     assert [item.global_step for item in callbacks] == [1, 2, 3]
     assert any(tag == "train/batch_total_loss" for tag, _, _ in sink.scalars)
+    assert any(
+        tag == "train/iteration_policy_kl_divergence" for tag, _, _ in sink.scalars
+    )
     assert any(
         not torch.equal(parameter, before[name])
         for name, parameter in model.named_parameters()
@@ -238,6 +275,267 @@ def test_checkpoint_resume_matches_uninterrupted_training(tmp_path: Path) -> Non
     assert continuous.scheduler.state_dict() == resumed.scheduler.state_dict()
 
 
+def test_scheduler_restart_preserves_adamw_state_and_restarts_only_lr_cycle(
+    tmp_path: Path,
+) -> None:
+    """A targeted restart restores AdamW moments but replaces scheduler progress."""
+
+    original = _small_config(checkpoint_interval=1, batches_per_iteration=1)
+    replay = _buffer(original)
+    specification, model = _model(original)
+    manager = CheckpointManager(tmp_path / "restart", specification)
+    source = Trainer(
+        original,
+        specification,
+        model,
+        device="cpu",
+        checkpoint_manager=manager,
+    )
+    first = source.train_iteration(replay)
+    assert first.checkpoint_id == "iteration-000001"
+    stored_optimizer = source.optimizer.state_dict()
+    stored_scheduler = source.scheduler.state_dict()
+
+    restart_config = replace(
+        original,
+        training=replace(
+            original.training,
+            scheduler_restart=replace(
+                original.training.scheduler_restart,
+                enabled=True,
+                checkpoint_id="iteration-000001",
+            ),
+        ),
+    )
+    _, resumed_model = _model(restart_config)
+    resumed = Trainer(
+        restart_config,
+        specification,
+        resumed_model,
+        device="cpu",
+        checkpoint_manager=manager,
+    )
+
+    metadata = resumed.resume("iteration-000001")
+
+    assert metadata.iteration == 1
+    assert resumed.completed_iteration == 1
+    assert resumed.updates_completed == 1
+    torch.testing.assert_close(
+        resumed.optimizer.state_dict()["state"],
+        stored_optimizer["state"],
+        rtol=0.0,
+        atol=0.0,
+    )
+    assert resumed.optimizer.param_groups[0]["lr"] == pytest.approx(0.0002)
+    assert resumed.scheduler.last_epoch == 0
+    assert resumed.scheduler.state_dict() != stored_scheduler
+
+    second = resumed.train_iteration(replay)
+    assert second.iteration == 2
+    assert second.starting_global_step == 1
+    assert second.ending_learning_rate == pytest.approx(0.00035)
+    assert manager.read_metadata("latest").metrics["scheduler_steps_completed"] == 1
+
+    _, twice_resumed_model = _model(restart_config)
+    twice_resumed = Trainer(
+        restart_config,
+        specification,
+        twice_resumed_model,
+        device="cpu",
+        checkpoint_manager=manager,
+    )
+    twice_resumed.resume("latest")
+    assert twice_resumed.scheduler.last_epoch == 1
+    assert twice_resumed.optimizer.param_groups[0]["lr"] == pytest.approx(0.00035)
+
+    third = twice_resumed.train_iteration(replay)
+    assert third.iteration == 3
+    assert third.starting_global_step == 2
+    assert third.ending_learning_rate == pytest.approx(0.0005)
+
+
+def test_scheduler_restart_accepts_a_legacy_checkpoint_without_restart_config(
+    tmp_path: Path,
+) -> None:
+    """Pre-feature checkpoints can opt into the configured recovery curve."""
+
+    config = _small_config(checkpoint_interval=1, batches_per_iteration=1)
+    replay = _buffer(config)
+    specification, model = _model(config)
+    manager = CheckpointManager(tmp_path / "legacy", specification)
+    source = Trainer(
+        config,
+        specification,
+        model,
+        device="cpu",
+        checkpoint_manager=manager,
+    )
+    source.train_iteration(replay)
+    manifest_path = (
+        tmp_path / "legacy" / "bundles" / "iteration-000001" / "manifest.json"
+    )
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["configuration"]["training"].pop("scheduler_restart")
+    manifest_path.write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+    restart_config = replace(
+        config,
+        training=replace(
+            config.training,
+            scheduler_restart=replace(
+                config.training.scheduler_restart,
+                enabled=True,
+                checkpoint_id="iteration-000001",
+            ),
+        ),
+    )
+    _, resumed_model = _model(restart_config)
+    resumed = Trainer(
+        restart_config,
+        specification,
+        resumed_model,
+        device="cpu",
+        checkpoint_manager=manager,
+    )
+
+    resumed.resume("iteration-000001")
+
+    assert resumed.completed_iteration == 1
+    assert resumed.scheduler.last_epoch == 0
+    assert resumed.optimizer.param_groups[0]["lr"] == pytest.approx(0.0002)
+
+
+def test_resume_accepts_a_legacy_checkpoint_without_symmetry_augmentation(
+    tmp_path: Path,
+) -> None:
+    """Pre-D4 checkpoints can resume with the active augmentation policy."""
+
+    config = _small_config(checkpoint_interval=1, batches_per_iteration=1)
+    replay = _buffer(config)
+    specification, model = _model(config)
+    manager = CheckpointManager(tmp_path / "legacy-augmentation", specification)
+    source = Trainer(
+        config,
+        specification,
+        model,
+        device="cpu",
+        checkpoint_manager=manager,
+    )
+    source.train_iteration(replay)
+
+    manifest_path = (
+        tmp_path
+        / "legacy-augmentation"
+        / "bundles"
+        / "iteration-000001"
+        / "manifest.json"
+    )
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["configuration"]["training"].pop("symmetry_augmentation")
+    manifest_path.write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+    _, resumed_model = _model(config)
+    resumed = Trainer(
+        config,
+        specification,
+        resumed_model,
+        device="cpu",
+        checkpoint_manager=manager,
+    )
+
+    metadata = resumed.resume("iteration-000001")
+
+    assert metadata.iteration == 1
+    assert resumed.completed_iteration == 1
+    assert resumed.updates_completed == 1
+
+
+def test_scheduler_restart_rejects_a_different_checkpoint(tmp_path: Path) -> None:
+    """A one-shot restart cannot silently apply to a later checkpoint."""
+
+    config = _small_config(checkpoint_interval=1, batches_per_iteration=1)
+    replay = _buffer(config)
+    specification, model = _model(config)
+    manager = CheckpointManager(tmp_path / "mismatch", specification)
+    source = Trainer(
+        config,
+        specification,
+        model,
+        device="cpu",
+        checkpoint_manager=manager,
+    )
+    source.run_iterations(replay, 2)
+    restart_config = replace(
+        config,
+        training=replace(
+            config.training,
+            scheduler_restart=replace(
+                config.training.scheduler_restart,
+                enabled=True,
+                checkpoint_id="iteration-000001",
+            ),
+        ),
+    )
+    _, resumed_model = _model(restart_config)
+    resumed = Trainer(
+        restart_config,
+        specification,
+        resumed_model,
+        device="cpu",
+        checkpoint_manager=manager,
+    )
+
+    with pytest.raises(TrainerStateError, match="does not match"):
+        resumed.resume("iteration-000002")
+
+
+def test_scheduler_restart_rejects_changed_recovery_curve(tmp_path: Path) -> None:
+    """The checkpoint identity toggle cannot smuggle in different LR parameters."""
+
+    config = _small_config(checkpoint_interval=1, batches_per_iteration=1)
+    replay = _buffer(config)
+    specification, model = _model(config)
+    manager = CheckpointManager(tmp_path / "curve", specification)
+    source = Trainer(
+        config,
+        specification,
+        model,
+        device="cpu",
+        checkpoint_manager=manager,
+    )
+    source.train_iteration(replay)
+    changed_curve = replace(
+        config,
+        training=replace(
+            config.training,
+            scheduler_restart=replace(
+                config.training.scheduler_restart,
+                enabled=True,
+                checkpoint_id="iteration-000001",
+                peak_learning_rate=0.0006,
+            ),
+        ),
+    )
+    _, resumed_model = _model(changed_curve)
+    resumed = Trainer(
+        changed_curve,
+        specification,
+        resumed_model,
+        device="cpu",
+        checkpoint_manager=manager,
+    )
+
+    with pytest.raises(TrainerStateError, match="may change only"):
+        resumed.resume("iteration-000001")
+
+
 def test_trainer_rejects_insufficient_replay_and_invalid_iteration(
     tmp_path: Path,
 ) -> None:
@@ -289,6 +587,7 @@ def test_tensorboard_sink_writes_real_event_file(tmp_path: Path) -> None:
     events = EventAccumulator(str(directory)).Reload()
     assert "train/batch_total_loss" in events.Tags()["scalars"]
     assert "train/iteration_total_loss" in events.Tags()["scalars"]
+    assert "train/iteration_policy_kl_divergence" in events.Tags()["scalars"]
     assert len(events.Scalars("train/batch_total_loss")) == 1
 
 

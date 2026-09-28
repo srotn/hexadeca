@@ -71,6 +71,8 @@ class LossOutput(NamedTuple):
     black_score: torch.Tensor
     white_score: torch.Tensor
     policy_entropy: torch.Tensor
+    target_policy_entropy: torch.Tensor
+    policy_kl_divergence: torch.Tensor
 
 
 class AlphaZeroLoss(nn.Module):
@@ -104,6 +106,10 @@ class AlphaZeroLoss(nn.Module):
             output.policy_logits, targets.legal_mask
         )
         policy_entropy = -torch.sum(probabilities * log_probabilities, dim=1).mean()
+        target_policy_entropy = -torch.sum(
+            torch.xlogy(targets.policy, targets.policy), dim=1
+        ).mean()
+        policy_kl_divergence = policy_loss - target_policy_entropy
         return LossOutput(
             total=total,
             policy=policy_loss,
@@ -111,6 +117,8 @@ class AlphaZeroLoss(nn.Module):
             black_score=black_score_loss,
             white_score=white_score_loss,
             policy_entropy=policy_entropy,
+            target_policy_entropy=target_policy_entropy,
+            policy_kl_divergence=policy_kl_divergence,
         )
 
 

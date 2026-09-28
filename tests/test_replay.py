@@ -75,6 +75,38 @@ def test_ring_retains_newest_positions_and_samples_deterministically() -> None:
     assert len({sample.state.ply for sample in first}) == 2
 
 
+def test_mixed_sampling_is_deterministic_and_uses_distinct_positions() -> None:
+    """The optional sampler is reproducible without changing ring contents."""
+
+    buffer = _buffer(8)
+    buffer.extend(
+        tuple(_sample(state, index) for index, state in enumerate(_states(8)))
+    )
+
+    first = buffer.sample_mixed(
+        6,
+        random.Random(23),
+        uniform_fraction=0.5,
+        recent_fraction=0.25,
+        hard_fraction=0.25,
+        recent_window_fraction=0.5,
+    )
+    second = buffer.sample_mixed(
+        6,
+        random.Random(23),
+        uniform_fraction=0.5,
+        recent_fraction=0.25,
+        hard_fraction=0.25,
+        recent_window_fraction=0.5,
+    )
+
+    assert [sample.state.ply for sample in first] == [
+        sample.state.ply for sample in second
+    ]
+    assert len({sample.state.ply for sample in first}) == 6
+    assert len(buffer) == 8
+
+
 def test_invalid_multi_sample_insert_is_atomic() -> None:
     """One invalid entry prevents every mutation in its insertion transaction."""
 

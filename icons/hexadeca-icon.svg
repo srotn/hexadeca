@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">Hexadeca app icon</title>
+  <desc id="desc">A blue game piece surrounded by eight forbidden cells.</desc>
+  <rect width="512" height="512" rx="112" fill="#080b10"/>
+  <rect x="32" y="32" width="448" height="448" rx="88" fill="#101b27" stroke="#28445a" stroke-width="8"/>
+  <g fill="#142230" stroke="#31536b" stroke-width="5">
+    <rect x="76" y="76" width="104" height="104" rx="16"/>
+    <rect x="204" y="76" width="104" height="104" rx="16"/>
+    <rect x="332" y="76" width="104" height="104" rx="16"/>
+    <rect x="76" y="204" width="104" height="104" rx="16"/>
+    <rect x="332" y="204" width="104" height="104" rx="16"/>
+    <rect x="76" y="332" width="104" height="104" rx="16"/>
+    <rect x="204" y="332" width="104" height="104" rx="16"/>
+    <rect x="332" y="332" width="104" height="104" rx="16"/>
+  </g>
+  <g stroke="#f59e0b" stroke-width="13" stroke-linecap="round" opacity=".9">
+    <path d="m102 102 52 52m0-52-52 52m128-52 52 52m0-52-52 52m128-52 52 52m0-52-52 52"/>
+    <path d="m102 230 52 52m0-52-52 52m256-52 52 52m0-52-52 52"/>
+    <path d="m102 358 52 52m0-52-52 52m128-52 52 52m0-52-52 52m128-52 52 52m0-52-52 52"/>
+  </g>
+  <circle cx="256" cy="256" r="86" fill="#38bdf8" opacity=".22"/>
+  <circle cx="256" cy="256" r="72" fill="#38bdf8" stroke="#b5efff" stroke-width="7"/>
+  <circle cx="234" cy="234" r="25" fill="#e6fbff" opacity=".72"/>
+  <circle cx="276" cy="278" r="55" fill="#0e5677" opacity=".26"/>
+</svg>

@@ -23,6 +23,7 @@ from mcts import (
     SearchResult,
     TorchBatchEvaluator,
 )
+from native import is_available
 from network import NetworkSpecification, PolicyValueNetwork
 
 
@@ -44,7 +45,7 @@ def run_mcts_benchmark(
     random_seed: int,
     include_cuda: bool = True,
 ) -> dict[str, object]:
-    """Measure pure Python search and optional end-to-end CUDA neural search."""
+    """Measure reference/native search and optional CUDA neural search."""
 
     if warmup_iterations < 0:
         raise ValueError("warmup_iterations must be nonnegative")
@@ -57,12 +58,27 @@ def run_mcts_benchmark(
     root_state = GameEnvironment(rules).state
     results: dict[str, object] = {
         "python_uniform_core": _measure_search(
-            MctsSearch(rules, benchmark_config, _UniformEvaluator()),
+            MctsSearch(
+                rules,
+                replace(benchmark_config, engine="reference"),
+                _UniformEvaluator(),
+            ),
             root_state,
             warmup_iterations=warmup_iterations,
             measurement_iterations=measurement_iterations,
         )
     }
+    if is_available():
+        results["native_uniform_core"] = _measure_search(
+            MctsSearch(
+                rules,
+                replace(benchmark_config, engine="native"),
+                _UniformEvaluator(),
+            ),
+            root_state,
+            warmup_iterations=warmup_iterations,
+            measurement_iterations=measurement_iterations,
+        )
 
     cuda_available = torch.cuda.is_available()
     if include_cuda and cuda_available:
@@ -97,6 +113,7 @@ def run_mcts_benchmark(
             ),
         },
         "mcts": {
+            "engine": benchmark_config.engine,
             "simulations": benchmark_simulations,
             "c_puct": benchmark_config.c_puct,
             "root_noise_enabled": benchmark_config.root_noise_enabled,

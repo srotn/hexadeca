@@ -11,7 +11,7 @@ import pytest
 from config import load_config
 from config.schema import MctsConfig, SelfPlayConfig
 from game import GameEnvironment, GameState
-from mcts import Evaluation
+from mcts import Evaluation, visit_probabilities
 from network import NetworkSpecification
 from training import (
     ReplayBuffer,
@@ -52,11 +52,49 @@ class FailingEvaluator:
         raise RuntimeError("inference unavailable")
 
 
+class CentralGpuMctsEvaluator(UniformEvaluator):
+    """CPU fixture for the production central CUDA root-operation contract."""
+
+    supports_remote_gpu_mcts = True
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.root_requests: list[dict[str, object] | None] = []
+
+    def evaluate_gpu_mcts_root(
+        self,
+        visit_counts: tuple[int, ...],
+        temperature: float,
+        puct: dict[str, object] | None,
+    ) -> tuple[float, ...]:
+        self.root_requests.append(puct)
+        if puct is None:
+            # The current production path centralizes visit-probability
+            # normalization while Native C++ remains authoritative for PUCT
+            # selection. No diagnostic edge vector is sent in that path.
+            return visit_probabilities(visit_counts, temperature)
+        puct_length = len(puct["visit_counts"])
+        assert 0 < puct_length <= len(visit_counts)
+        assert all(
+            len(puct[name]) == puct_length
+            for name in (
+                "priors",
+                "value_sums",
+                "virtual_visit_counts",
+                "virtual_value_sums",
+                "solved_values",
+            )
+        )
+        assert sum(puct["visit_counts"]) == sum(visit_counts)
+        return visit_probabilities(visit_counts, temperature)
+
+
 def _mcts_config() -> MctsConfig:
     return replace(
         load_config().mcts,
         training_simulations=4,
         max_inference_batch_size=4,
+        exact_endgame_enabled=False,
     )
 
 
@@ -65,6 +103,7 @@ def _self_play_config(*, workers: int) -> SelfPlayConfig:
         load_config().self_play,
         games_per_iteration=4,
         worker_processes=workers,
+        inference_transport="compact",
         inference_max_batch_size=8,
         inference_batch_wait_seconds=0.01,
         inference_response_timeout_seconds=30.0,
@@ -169,8 +208,25 @@ def test_multiprocess_workers_are_isolated_and_results_are_stably_ordered() -> N
     ]
 
 
+def test_worker_root_mcts_arithmetic_executes_in_central_process() -> None:
+    """Workers proxy PUCT and visit-policy work to the central device owner."""
+
+    config = load_config()
+    evaluator = CentralGpuMctsEvaluator()
+    batch = SelfPlayCoordinator(
+        config.rules,
+        _mcts_config(),
+        _self_play_config(workers=1),
+        evaluator,
+        model_identifier="candidate-central-gpu-mcts",
+    ).run(game_count=1, master_seed=20260910)
+
+    assert len(evaluator.root_requests) == batch.games[0].plies
+    assert evaluator.process_ids and set(evaluator.process_ids) == {os.getpid()}
+
+
 def test_game_seeds_and_outputs_do_not_depend_on_worker_count() -> None:
-    """Changing process parallelism cannot reassign randomness between games."""
+    """Changing process or lane parallelism cannot reassign game randomness."""
 
     config = load_config()
     mcts = _mcts_config()
@@ -188,6 +244,14 @@ def test_game_seeds_and_outputs_do_not_depend_on_worker_count() -> None:
         UniformEvaluator(),
         model_identifier="candidate-3",
     ).run(game_count=2, master_seed=777)
+    two_lanes = SelfPlayCoordinator(
+        config.rules,
+        mcts,
+        _self_play_config(workers=1),
+        UniformEvaluator(),
+        model_identifier="candidate-3",
+        games_per_worker=2,
+    ).run(game_count=2, master_seed=777)
 
     assert [game.seed for game in one_worker.games] == [
         game.seed for game in two_workers.games
@@ -195,8 +259,45 @@ def test_game_seeds_and_outputs_do_not_depend_on_worker_count() -> None:
     assert [game.actions for game in one_worker.games] == [
         game.actions for game in two_workers.games
     ]
+    assert [game.actions for game in one_worker.games] == [
+        game.actions for game in two_lanes.games
+    ]
     assert [sample.policy for sample in one_worker.samples] == [
         sample.policy for sample in two_workers.samples
+    ]
+    assert [sample.policy for sample in one_worker.samples] == [
+        sample.policy for sample in two_lanes.samples
+    ]
+    assert two_lanes.worker_processes == 1
+    assert len({game.process_id for game in two_lanes.games}) == 1
+    assert two_lanes.maximum_inference_batch_size > mcts.max_inference_batch_size
+
+
+def test_compact_and_object_transports_produce_identical_games() -> None:
+    """Transport selection cannot alter MCTS ordering, targets, or results."""
+
+    config = load_config()
+    mcts = _mcts_config()
+    compact = SelfPlayCoordinator(
+        config.rules,
+        mcts,
+        _self_play_config(workers=1),
+        UniformEvaluator(),
+        model_identifier="candidate-transport",
+    ).run(game_count=2, master_seed=314159)
+    object_transport = SelfPlayCoordinator(
+        config.rules,
+        mcts,
+        replace(_self_play_config(workers=1), inference_transport="object"),
+        UniformEvaluator(),
+        model_identifier="candidate-transport",
+    ).run(game_count=2, master_seed=314159)
+
+    assert [game.actions for game in compact.games] == [
+        game.actions for game in object_transport.games
+    ]
+    assert [sample.policy for sample in compact.samples] == [
+        sample.policy for sample in object_transport.samples
     ]
 
 

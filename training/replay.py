@@ -164,6 +164,93 @@ class ReplaySnapshot(Sequence[ReplaySample]):
                 int(self._white_scores[index].item()),
             )
 
+    def sample_mixed(
+        self,
+        count: int,
+        random_source: random.Random,
+        *,
+        uniform_fraction: float,
+        recent_fraction: float,
+        hard_fraction: float,
+        recent_window_fraction: float,
+    ) -> ReplaySnapshot:
+        """Select a deterministic mix of uniform, recent, and hard positions.
+
+        Hardness is deliberately a model-independent proxy for the first
+        rollout: target-policy entropy plus closeness of the final score.
+        This keeps old replay databases usable while later diagnostics can
+        replace the proxy with measured prediction error.
+        """
+
+        _validate_mixed_sampling(
+            count,
+            len(self),
+            random_source,
+            uniform_fraction,
+            recent_fraction,
+            hard_fraction,
+            recent_window_fraction,
+        )
+        if count == len(self):
+            return self
+
+        indices = list(range(len(self)))
+        recent_size = max(1, int(len(indices) * recent_window_fraction))
+        recent_pool = indices[-recent_size:]
+        recent_count = min(len(recent_pool), count, round(count * recent_fraction))
+        hard_count = min(count - recent_count, round(count * hard_fraction))
+        selected: list[int] = []
+
+        if recent_count:
+            selected.extend(random_source.sample(recent_pool, recent_count))
+
+        remaining = [index for index in indices if index not in set(selected)]
+        if hard_count:
+            policy = self._policy_targets[remaining].clamp_min(1e-12)
+            entropy = -(policy * policy.log()).sum(dim=1)
+            entropy_scale = max(
+                1.0, torch.log(torch.tensor(float(policy.shape[1]))).item()
+            )
+            entropy_score = (entropy / entropy_scale).clamp_max(1.0)
+            score_margin = (
+                (self._black_scores[remaining] - self._white_scores[remaining])
+                .abs()
+                .to(dtype=torch.float32)
+            )
+            closeness = (
+                1.0 - score_margin / float(self._specification.score_normalizer)
+            ).clamp_min(0.0)
+            hardness = 0.65 * entropy_score + 0.35 * closeness
+            ranked_positions = torch.argsort(hardness, descending=True).tolist()
+            ranked = [remaining[position] for position in ranked_positions]
+            hard_count = min(hard_count, len(ranked))
+            hard_pool_size = min(len(ranked), max(hard_count * 4, hard_count))
+            hard_pool = ranked[:hard_pool_size]
+            hard_selected = random_source.sample(hard_pool, hard_count)
+            selected.extend(hard_selected)
+            selected_set = set(hard_selected)
+            remaining = [index for index in remaining if index not in selected_set]
+
+        uniform_count = count - len(selected)
+        if uniform_count:
+            selected.extend(random_source.sample(remaining, uniform_count))
+        random_source.shuffle(selected)
+        return self._select_indices(selected)
+
+    def _select_indices(self, indices: Sequence[int]) -> ReplaySnapshot:
+        index_tensor = torch.tensor(tuple(indices), dtype=torch.int64)
+        return ReplaySnapshot(
+            self._rules,
+            self._specification,
+            self._source_capacity,
+            self._total_positions_added,
+            tuple(self._histories[index] for index in indices),
+            self._policy_targets.index_select(0, index_tensor),
+            self._win_targets.index_select(0, index_tensor),
+            self._black_scores.index_select(0, index_tensor),
+            self._white_scores.index_select(0, index_tensor),
+        )
+
 
 class ReplayBuffer:
     """A bounded chronological ring with atomic multi-sample insertion."""
@@ -358,6 +445,27 @@ class ReplayBuffer:
             )
         return tuple(snapshot)
 
+    def sample_mixed(
+        self,
+        count: int,
+        random_source: random.Random,
+        *,
+        uniform_fraction: float,
+        recent_fraction: float,
+        hard_fraction: float,
+        recent_window_fraction: float,
+    ) -> ReplaySnapshot:
+        """Return a mixed sample from a point-in-time replay snapshot."""
+
+        return self.snapshot().sample_mixed(
+            count,
+            random_source,
+            uniform_fraction=uniform_fraction,
+            recent_fraction=recent_fraction,
+            hard_fraction=hard_fraction,
+            recent_window_fraction=recent_window_fraction,
+        )
+
     def _chronological_indices(self) -> list[int]:
         start = (self._next_index - self._size) % self._capacity
         return [(start + offset) % self._capacity for offset in range(self._size)]
@@ -457,11 +565,45 @@ class ReplayBuffer:
         )
 
 
-def _win_target(to_play: Player, black_score: int, white_score: int) -> float:
+def _win_target(
+    to_play: Player,
+    black_score: int,
+    white_score: int,
+) -> float:
     if black_score == white_score:
         return 0.5
     winner = Player.BLACK if black_score > white_score else Player.WHITE
     return 1.0 if winner is to_play else 0.0
+
+
+def _validate_mixed_sampling(
+    count: int,
+    size: int,
+    random_source: random.Random,
+    uniform_fraction: float,
+    recent_fraction: float,
+    hard_fraction: float,
+    recent_window_fraction: float,
+) -> None:
+    """Validate the public mixed-sampling contract."""
+
+    if type(count) is not int or count <= 0 or count > size:
+        raise ReplayValidationError(
+            "Mixed replay sample count must be within retained positions"
+        )
+    if not isinstance(random_source, random.Random):
+        raise ReplayValidationError("Replay sampling requires random.Random")
+    fractions = (uniform_fraction, recent_fraction, hard_fraction)
+    if any(not isfinite(value) or value < 0.0 for value in fractions):
+        raise ReplayValidationError(
+            "Mixed replay fractions must be finite and nonnegative"
+        )
+    if not isclose(sum(fractions), 1.0, rel_tol=0.0, abs_tol=1e-6):
+        raise ReplayValidationError("Mixed replay fractions must sum to one")
+    if not isfinite(recent_window_fraction) or not 0.0 < recent_window_fraction <= 1.0:
+        raise ReplayValidationError(
+            "Recent replay window fraction must be in the interval (0, 1]"
+        )
 
 
 def _reconstruct_state(actions: tuple[int, ...], rules: RulesConfig) -> GameState:

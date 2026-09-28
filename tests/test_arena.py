@@ -8,7 +8,7 @@ from dataclasses import replace
 from config import load_config
 from game import Board, GameState, Player
 from mcts import Evaluation
-from training import ArenaCoordinator, generate_openings
+from training import ArenaCoordinator, generate_openings, play_arena_game
 
 
 class UniformEvaluator:
@@ -64,6 +64,7 @@ def test_arena_coordinator_completes_one_color_swapped_pair() -> None:
         training_simulations=2,
         evaluation_simulations=2,
         max_inference_batch_size=2,
+        exact_endgame_enabled=False,
     )
     evaluation = replace(
         config.evaluation,
@@ -102,6 +103,123 @@ def test_arena_coordinator_completes_one_color_swapped_pair() -> None:
     assert candidate.position_count == batch.candidate_inference_positions > 0
     assert best.batch_count == batch.best_inference_batches > 0
     assert best.position_count == batch.best_inference_positions > 0
+
+
+def test_arena_supports_distinct_search_budgets_per_model() -> None:
+    """A search-only comparison accounts for each side's exact simulations."""
+
+    config = load_config()
+    rules = replace(config.rules, board_size=4)
+    shared_mcts = replace(
+        config.mcts,
+        training_simulations=1,
+        evaluation_simulations=1,
+        max_inference_batch_size=2,
+        exact_endgame_enabled=False,
+    )
+    candidate_mcts = replace(shared_mcts, evaluation_simulations=2)
+    evaluation = replace(
+        config.evaluation,
+        game_count=2,
+        opening_plies=1,
+        bootstrap_samples=100,
+        worker_processes=1,
+        inference_max_batch_size=4,
+        inference_batch_wait_seconds=0.001,
+    )
+    coordinator = ArenaCoordinator(
+        rules,
+        shared_mcts,
+        evaluation,
+        UniformEvaluator(),
+        UniformEvaluator(),
+        candidate_identifier="same-model-s2",
+        best_identifier="same-model-s1",
+        candidate_mcts=candidate_mcts,
+        best_mcts=shared_mcts,
+    )
+
+    batch = coordinator.run()
+
+    expected_simulations = 0
+    for game in batch.games:
+        for ply in range(len(game.opening_actions), game.plies):
+            player = Player.BLACK if ply % 2 == 0 else Player.WHITE
+            expected_simulations += 2 if player is game.candidate_player else 1
+    assert batch.total_simulations == expected_simulations
+
+
+def test_arena_resumes_from_a_validated_partial_game() -> None:
+    """Only missing games are searched and newly finished games are reported."""
+
+    config = load_config()
+    rules = replace(config.rules, board_size=4)
+    mcts = replace(
+        config.mcts,
+        training_simulations=2,
+        evaluation_simulations=2,
+        max_inference_batch_size=2,
+        exact_endgame_enabled=False,
+    )
+    evaluation = replace(
+        config.evaluation,
+        game_count=2,
+        opening_plies=1,
+        bootstrap_samples=100,
+        worker_processes=1,
+        inference_max_batch_size=4,
+        inference_batch_wait_seconds=0.001,
+    )
+    opening = generate_openings(
+        rules,
+        pair_count=1,
+        opening_plies=1,
+        random_seed=evaluation.random_seed,
+    )[0]
+    prior_game = play_arena_game(
+        rules,
+        mcts,
+        UniformEvaluator(),
+        UniformEvaluator(),
+        game_index=0,
+        opening=opening,
+        candidate_player=Player.BLACK,
+        seed=_derive_seed(evaluation.random_seed, 0),
+        draw_score=evaluation.draw_score,
+    )
+    completed = []
+    batch = ArenaCoordinator(
+        rules,
+        mcts,
+        evaluation,
+        UniformEvaluator(),
+        UniformEvaluator(),
+        candidate_identifier="candidate-1",
+        best_identifier="best-1",
+    ).run(prior_games=(prior_game,), game_callback=completed.append)
+
+    assert batch.games[0] == prior_game
+    assert len(batch.games) == 2
+    assert [game.game_index for game in completed] == [1]
+
+    fully_resumed = ArenaCoordinator(
+        rules,
+        mcts,
+        evaluation,
+        UniformEvaluator(),
+        UniformEvaluator(),
+        candidate_identifier="candidate-1",
+        best_identifier="best-1",
+    ).run(prior_games=batch.games)
+    assert fully_resumed.games == batch.games
+    assert fully_resumed.worker_processes == 0
+
+
+def _derive_seed(master_seed: int, game_index: int) -> int:
+    value = (master_seed + (game_index + 1) * 0x9E3779B97F4A7C15) & ((1 << 64) - 1)
+    value = (value ^ (value >> 30)) * 0xBF58476D1CE4E5B9 & ((1 << 64) - 1)
+    value = (value ^ (value >> 27)) * 0x94D049BB133111EB & ((1 << 64) - 1)
+    return (value ^ (value >> 31)) & ((1 << 64) - 1)
 
 
 def _uniform_evaluation(state: GameState) -> Evaluation:

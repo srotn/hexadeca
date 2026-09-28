@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import gc
 import os
 import queue
 import random
@@ -169,6 +170,7 @@ class _WorkerDone:
 
 
 ArenaProgressCallback = Callable[[ArenaProgress], None]
+ArenaGameCallback = Callable[[ArenaGame], None]
 
 
 class _RemoteArenaEvaluator:
@@ -283,6 +285,8 @@ def play_arena_game(
     draw_score: float,
     worker_index: int = 0,
     progress_callback: ArenaProgressCallback | None = None,
+    candidate_mcts: MctsConfig | None = None,
+    best_mcts: MctsConfig | None = None,
 ) -> ArenaGame:
     """Play one deterministic post-opening evaluation game."""
 
@@ -304,9 +308,15 @@ def play_arena_game(
     if environment.terminal():
         raise ArenaValidationError("Arena opening must not be terminal")
 
+    candidate_search_config = candidate_mcts or mcts
+    best_search_config = best_mcts or mcts
     searches = {
-        candidate_player: MctsSearch(rules, mcts, candidate_evaluator),
-        candidate_player.opponent: MctsSearch(rules, mcts, best_evaluator),
+        candidate_player: MctsSearch(
+            rules, candidate_search_config, candidate_evaluator
+        ),
+        candidate_player.opponent: MctsSearch(
+            rules, best_search_config, best_evaluator
+        ),
     }
     random_source = random.Random(seed)
     total_simulations = 0
@@ -366,7 +376,14 @@ def play_arena_game(
         total_simulations=total_simulations,
         search_elapsed_seconds=search_elapsed_seconds,
     )
-    _validate_game(game, rules, mcts, draw_score)
+    _validate_game(
+        game,
+        rules,
+        mcts,
+        draw_score,
+        candidate_mcts=candidate_search_config,
+        best_mcts=best_search_config,
+    )
     return game
 
 
@@ -376,8 +393,10 @@ class ArenaCoordinator:
     __slots__ = (
         "_best_evaluator",
         "_best_identifier",
+        "_best_mcts",
         "_candidate_evaluator",
         "_candidate_identifier",
+        "_candidate_mcts",
         "_config",
         "_mcts",
         "_rules",
@@ -393,12 +412,20 @@ class ArenaCoordinator:
         *,
         candidate_identifier: str,
         best_identifier: str,
+        candidate_mcts: MctsConfig | None = None,
+        best_mcts: MctsConfig | None = None,
     ) -> None:
         _validate_identifier(candidate_identifier, "candidate")
         _validate_identifier(best_identifier, "best")
         if candidate_identifier == best_identifier:
             raise ArenaValidationError("Arena models must have different identifiers")
-        if config.inference_max_batch_size < mcts.max_inference_batch_size:
+        resolved_candidate_mcts = candidate_mcts or mcts
+        resolved_best_mcts = best_mcts or mcts
+        required_batch_size = max(
+            resolved_candidate_mcts.max_inference_batch_size,
+            resolved_best_mcts.max_inference_batch_size,
+        )
+        if config.inference_max_batch_size < required_batch_size:
             raise ArenaValidationError(
                 "Arena inference capacity must cover one complete MCTS request"
             )
@@ -412,6 +439,8 @@ class ArenaCoordinator:
             )
         self._rules = rules
         self._mcts = mcts
+        self._candidate_mcts = resolved_candidate_mcts
+        self._best_mcts = resolved_best_mcts
         self._config = config
         self._candidate_evaluator = candidate_evaluator
         self._best_evaluator = best_evaluator
@@ -422,8 +451,17 @@ class ArenaCoordinator:
         self,
         *,
         progress_callback: ArenaProgressCallback | None = None,
+        game_callback: ArenaGameCallback | None = None,
+        prior_games: Sequence[ArenaGame] = (),
     ) -> ArenaBatch:
-        """Run the configured complete paired Arena or return no partial result."""
+        """Run the configured Arena, optionally retaining validated prior games.
+
+        ``prior_games`` makes an interrupted external Arena report resumable.
+        They are fully validated and included in the returned batch, while only
+        their missing counterparts are assigned to workers. ``game_callback``
+        is invoked in the parent process after each newly completed game has
+        been validated, making it suitable for durable progress checkpoints.
+        """
 
         openings = generate_openings(
             self._rules,
@@ -432,9 +470,40 @@ class ArenaCoordinator:
             random_seed=self._config.random_seed,
         )
         jobs = _build_jobs(openings, self._config.random_seed)
-        worker_count = min(self._config.worker_processes, len(jobs))
+        games = _validate_prior_games(
+            prior_games,
+            jobs,
+            self._rules,
+            self._mcts,
+            self._config.draw_score,
+            candidate_mcts=self._candidate_mcts,
+            best_mcts=self._best_mcts,
+        )
+        pending_jobs = tuple(job for job in jobs if job.game_index not in games)
+        if not pending_jobs:
+            ordered_games = tuple(
+                games[index] for index in range(self._config.game_count)
+            )
+            _validate_pairs(ordered_games, openings)
+            return ArenaBatch(
+                schema_version=ARENA_SCHEMA_VERSION,
+                candidate_identifier=self._candidate_identifier,
+                best_identifier=self._best_identifier,
+                random_seed=self._config.random_seed,
+                openings=openings,
+                games=ordered_games,
+                worker_processes=0,
+                candidate_inference_batches=0,
+                candidate_inference_positions=0,
+                best_inference_batches=0,
+                best_inference_positions=0,
+                maximum_inference_batch_size=0,
+                elapsed_seconds=0.0,
+            )
+
+        worker_count = min(self._config.worker_processes, len(pending_jobs))
         assignments: list[list[_ArenaJob]] = [[] for _ in range(worker_count)]
-        for job in jobs:
+        for job in pending_jobs:
             assignments[job.game_index % worker_count].append(job)
 
         context = torch.multiprocessing.get_context("spawn")
@@ -457,6 +526,8 @@ class ArenaCoordinator:
                 result_queue,
                 openings,
                 progress_callback,
+                game_callback,
+                games,
             )
         except BaseException:
             _shutdown_processes(
@@ -507,6 +578,8 @@ class ArenaCoordinator:
                         tuple(jobs),
                         self._rules,
                         self._mcts,
+                        self._candidate_mcts,
+                        self._best_mcts,
                         self._config,
                         request_queue,
                         response_queues[worker_index],
@@ -533,10 +606,11 @@ class ArenaCoordinator:
         result_queue: Any,
         openings: tuple[ArenaOpening, ...],
         progress_callback: ArenaProgressCallback | None,
+        game_callback: ArenaGameCallback | None,
+        games: dict[int, ArenaGame],
     ) -> ArenaBatch:
         started_at = perf_counter()
         active_workers = set(range(len(processes)))
-        games: dict[int, ArenaGame] = {}
         deferred: _InferenceRequest | None = None
         batches = {ArenaModel.CANDIDATE: 0, ArenaModel.BEST: 0}
         positions = {ArenaModel.CANDIDATE: 0, ArenaModel.BEST: 0}
@@ -544,7 +618,9 @@ class ArenaCoordinator:
 
         while active_workers:
             for message in _drain_queue(result_queue):
-                self._handle_message(message, active_workers, games, progress_callback)
+                self._handle_message(
+                    message, active_workers, games, progress_callback, game_callback
+                )
             request = deferred
             deferred = None
             if request is None:
@@ -555,7 +631,11 @@ class ArenaCoordinator:
                 except queue.Empty:
                     for message in _drain_queue(result_queue):
                         self._handle_message(
-                            message, active_workers, games, progress_callback
+                            message,
+                            active_workers,
+                            games,
+                            progress_callback,
+                            game_callback,
                         )
                     _raise_for_unreported_exit(processes, active_workers)
                     continue
@@ -583,13 +663,19 @@ class ArenaCoordinator:
                 position_count += len(next_request.states)
 
             model_batches = self._serve_requests(requests, response_queues)
-            for model, served_positions in model_batches.items():
-                batches[model] += 1
+            for model, (
+                served_batches,
+                served_positions,
+                largest_batch,
+            ) in model_batches.items():
+                batches[model] += served_batches
                 positions[model] += served_positions
-                maximum_batch_size = max(maximum_batch_size, served_positions)
+                maximum_batch_size = max(maximum_batch_size, largest_batch)
 
         for message in _drain_queue(result_queue):
-            self._handle_message(message, active_workers, games, progress_callback)
+            self._handle_message(
+                message, active_workers, games, progress_callback, game_callback
+            )
         if len(games) != self._config.game_count:
             missing = sorted(set(range(self._config.game_count)) - set(games))
             raise ArenaWorkerError(f"Arena batch is missing game results: {missing}")
@@ -615,12 +701,12 @@ class ArenaCoordinator:
         self,
         requests: list[_InferenceRequest],
         response_queues: list[Any],
-    ) -> dict[ArenaModel, int]:
+    ) -> dict[ArenaModel, tuple[int, int, int]]:
         grouped = {
             model: [request for request in requests if request.model is model]
             for model in ArenaModel
         }
-        served: dict[ArenaModel, int] = {}
+        served: dict[ArenaModel, tuple[int, int, int]] = {}
         for model, model_requests in grouped.items():
             if not model_requests:
                 continue
@@ -633,11 +719,9 @@ class ArenaCoordinator:
                 state for request in model_requests for state in request.states
             )
             try:
-                evaluations = tuple(evaluator.evaluate(states))
-                if len(evaluations) != len(states):
-                    raise ArenaInferenceError(
-                        "Arena evaluator output count must match its input batch"
-                    )
+                evaluations, evaluator_batches, largest_batch = (
+                    self._evaluate_with_memory_fallback(evaluator, states)
+                )
             except Exception as error:
                 message = (
                     f"{model.value} inference failed: {type(error).__name__}: {error}"
@@ -663,8 +747,46 @@ class ArenaCoordinator:
                     self._config.inference_response_timeout_seconds,
                 )
                 offset += count
-            served[model] = len(states)
+            served[model] = (evaluator_batches, len(states), largest_batch)
         return served
+
+    @staticmethod
+    def _evaluate_with_memory_fallback(
+        evaluator: BatchEvaluator,
+        states: tuple[GameState, ...],
+    ) -> tuple[tuple[Evaluation, ...], int, int]:
+        """Evaluate a batch, bisecting only after a host-memory failure."""
+
+        try:
+            evaluations = tuple(evaluator.evaluate(states))
+        except MemoryError:
+            if len(states) == 1:
+                raise
+            # The native encoder needs one contiguous NCHW NumPy array. A
+            # fragmented Windows heap can reject a late long-Arena allocation
+            # although its smaller equivalent batches still fit.
+            gc.collect()
+            midpoint = len(states) // 2
+            left, left_batches, left_largest = (
+                ArenaCoordinator._evaluate_with_memory_fallback(
+                    evaluator, states[:midpoint]
+                )
+            )
+            right, right_batches, right_largest = (
+                ArenaCoordinator._evaluate_with_memory_fallback(
+                    evaluator, states[midpoint:]
+                )
+            )
+            return (
+                left + right,
+                left_batches + right_batches,
+                max(left_largest, right_largest),
+            )
+        if len(evaluations) != len(states):
+            raise ArenaInferenceError(
+                "Arena evaluator output count must match its input batch"
+            )
+        return evaluations, 1, len(states)
 
     def _validate_request(
         self, raw: object, active_workers: set[int]
@@ -687,18 +809,28 @@ class ArenaCoordinator:
         active_workers: set[int],
         games: dict[int, ArenaGame],
         progress_callback: ArenaProgressCallback | None,
+        game_callback: ArenaGameCallback | None,
     ) -> None:
         if isinstance(message, ArenaProgress):
             if progress_callback is not None:
                 progress_callback(message)
             return
         if isinstance(message, ArenaGame):
-            _validate_game(message, self._rules, self._mcts, self._config.draw_score)
+            _validate_game(
+                message,
+                self._rules,
+                self._mcts,
+                self._config.draw_score,
+                candidate_mcts=self._candidate_mcts,
+                best_mcts=self._best_mcts,
+            )
             if not 0 <= message.game_index < self._config.game_count:
                 raise ArenaWorkerError("Arena game index is outside the batch")
             if message.game_index in games:
                 raise ArenaWorkerError("Arena worker returned a duplicate game")
             games[message.game_index] = message
+            if game_callback is not None:
+                game_callback(message)
             return
         if isinstance(message, _WorkerFailure):
             raise ArenaWorkerError(
@@ -733,11 +865,56 @@ def _build_jobs(
     return tuple(jobs)
 
 
+def _validate_prior_games(
+    prior_games: Sequence[ArenaGame],
+    jobs: tuple[_ArenaJob, ...],
+    rules: RulesConfig,
+    mcts: MctsConfig,
+    draw_score: float,
+    *,
+    candidate_mcts: MctsConfig,
+    best_mcts: MctsConfig,
+) -> dict[int, ArenaGame]:
+    """Validate externally persisted results before an Arena resume."""
+
+    expected = {job.game_index: job for job in jobs}
+    validated: dict[int, ArenaGame] = {}
+    for game in prior_games:
+        if not isinstance(game, ArenaGame):
+            raise ArenaValidationError("Arena prior result has an invalid type")
+        _validate_game(
+            game,
+            rules,
+            mcts,
+            draw_score,
+            candidate_mcts=candidate_mcts,
+            best_mcts=best_mcts,
+        )
+        job = expected.get(game.game_index)
+        if job is None:
+            raise ArenaValidationError("Arena prior result index is outside the batch")
+        if (
+            game.opening_index != job.opening.index
+            or game.opening_actions != job.opening.actions
+            or game.candidate_player is not job.candidate_player
+            or game.seed != job.seed
+        ):
+            raise ArenaValidationError(
+                "Arena prior result does not match this Arena configuration"
+            )
+        if game.game_index in validated:
+            raise ArenaValidationError("Arena prior results contain a duplicate game")
+        validated[game.game_index] = game
+    return validated
+
+
 def _arena_worker_main(
     worker_index: int,
     jobs: tuple[_ArenaJob, ...],
     rules: RulesConfig,
     mcts: MctsConfig,
+    candidate_mcts: MctsConfig,
+    best_mcts: MctsConfig,
     config: EvaluationConfig,
     request_queue: Any,
     response_queue: Any,
@@ -778,6 +955,8 @@ def _arena_worker_main(
                     draw_score=config.draw_score,
                     worker_index=worker_index,
                     progress_callback=publish,
+                    candidate_mcts=candidate_mcts,
+                    best_mcts=best_mcts,
                 )
             )
     except BaseException as error:
@@ -839,6 +1018,9 @@ def _validate_game(
     rules: RulesConfig,
     mcts: MctsConfig,
     draw_score: float,
+    *,
+    candidate_mcts: MctsConfig | None = None,
+    best_mcts: MctsConfig | None = None,
 ) -> None:
     if game.schema_version != ARENA_SCHEMA_VERSION:
         raise ArenaValidationError("Arena game schema version is unsupported")
@@ -872,8 +1054,22 @@ def _validate_game(
     )
     if game.candidate_points != expected_points:
         raise ArenaValidationError("Arena candidate points are inconsistent")
+    candidate_search_config = candidate_mcts or mcts
+    best_search_config = best_mcts or mcts
     searched_plies = len(game.actions) - len(game.opening_actions)
-    if game.total_simulations != searched_plies * mcts.evaluation_simulations:
+    expected_simulations = 0
+    for offset in range(searched_plies):
+        player = (
+            Player.BLACK
+            if (len(game.opening_actions) + offset) % 2 == 0
+            else Player.WHITE
+        )
+        expected_simulations += (
+            candidate_search_config.evaluation_simulations
+            if player is game.candidate_player
+            else best_search_config.evaluation_simulations
+        )
+    if game.total_simulations != expected_simulations:
         raise ArenaValidationError("Arena simulation count is inconsistent")
     if not isfinite(game.search_elapsed_seconds) or game.search_elapsed_seconds < 0:
         raise ArenaValidationError("Arena search duration is invalid")

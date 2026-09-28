@@ -76,6 +76,15 @@ def test_composite_loss_is_finite_and_backpropagates() -> None:
     )
     assert result.total.item() == pytest.approx(expected_total.item())
     assert result.policy_entropy.item() > 0
+    expected_target_entropy = -torch.sum(
+        torch.xlogy(targets.policy, targets.policy), dim=1
+    ).mean()
+    assert result.target_policy_entropy.item() == pytest.approx(
+        expected_target_entropy.item()
+    )
+    assert result.policy_kl_divergence.item() == pytest.approx(
+        (result.policy - result.target_policy_entropy).item()
+    )
     assert logits.grad is not None
     assert logits.grad[0, 2].item() == 0.0
     assert logits.grad[0, 3].item() == 0.0

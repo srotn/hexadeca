@@ -43,6 +43,7 @@ def test_self_play_benchmark_reports_end_to_end_throughput() -> None:
         simulations=2,
         random_seed=17,
         include_cuda=False,
+        profile_timing=True,
     )
 
     self_play_report = report["self_play"]
@@ -61,3 +62,15 @@ def test_self_play_benchmark_reports_end_to_end_throughput() -> None:
     assert int(results["central_inference_positions"]) > 0
     assert 1.0 <= float(results["central_average_inference_batch_size"]) <= 2.0
     assert int(results["central_maximum_inference_batch_size"]) <= 2
+    timing = report["timing"]
+    assert isinstance(timing, dict)
+    assert float(timing["wall_elapsed_seconds"]) > 0.0
+    evaluator_timing = timing["evaluator"]
+    assert isinstance(evaluator_timing, dict)
+    assert int(evaluator_timing["batches"]) > 0
+    assert int(evaluator_timing["positions"]) > 0
+    self_play_timing = timing["self_play"]
+    assert isinstance(self_play_timing, dict)
+    worker_mcts = self_play_timing["worker_mcts"]
+    assert isinstance(worker_mcts, dict)
+    assert int(worker_mcts["search_calls"]) == int(results["positions_generated"])

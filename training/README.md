@@ -63,6 +63,15 @@ is not added to `AlphaZeroLoss`. The scheduler counts successful optimizer
 steps: it linearly warms up for 1,000 steps, cosine-decays for 100,000 further
 steps, then holds the configured minimum learning rate.
 
+An optional scheduler-only recovery cycle is bound to one exact checkpoint ID.
+It restores model, AdamW moments, GradScaler, and RNG state normally, then
+replaces only scheduler progress. The cycle warms from its configured initial
+LR to a bounded recovery peak and cosine-decays to its minimum. Subsequent
+checkpoints store the independent scheduler-step counter, so restarting the
+service does not apply the recovery twice. A checkpoint other than the
+configured source follows strict resume validation and is rejected while the
+one-shot profile remains enabled.
+
 CUDA training uses FP16 autocast and `GradScaler`. A detected overflow does not
 advance the optimizer-step counter or scheduler; the scaler backs off and the
 batch is retried up to the configured limit. Gradients are unscaled before the
@@ -137,6 +146,15 @@ the versioned 16 feature planes only when a batch is requested and produces the
 existing `TrainingTargets` contract with normalized scores. Shuffle, worker
 count, prefetch, pinned memory, and incomplete-batch behavior all come from the
 unified configuration. Shuffling requires an explicit `torch.Generator`.
+
+The default `training.symmetry_augmentation = "d4"` setting applies one of the
+eight board rotations/reflections independently to each materialized sample.
+The same transform is applied to spatial feature planes, legal masks, and
+policy targets; scalar score and outcome targets are unchanged. Coordinate
+planes remain canonical for the transformed board. Transform selection is
+derived from the iteration seed and state hash, so resumed training remains
+reproducible even with multiple DataLoader workers. Set the option to `"none"`
+only for a controlled non-augmented baseline.
 
 ## Checkpoints
 

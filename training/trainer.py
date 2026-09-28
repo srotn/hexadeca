@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import random
 from collections.abc import Callable, Mapping
 from dataclasses import asdict, dataclass, replace
 from math import cos, isfinite, pi
@@ -14,7 +15,7 @@ from torch.amp.grad_scaler import GradScaler
 from torch.optim import AdamW, Optimizer
 from torch.optim.lr_scheduler import LambdaLR
 
-from config.schema import AppConfig, TrainingConfig
+from config.schema import AppConfig, SchedulerRestartConfig, TrainingConfig
 from network import (
     AlphaZeroLoss,
     LossOutput,
@@ -25,6 +26,7 @@ from network import (
 from training.checkpoint import (
     CheckpointManager,
     CheckpointMetadata,
+    JsonValue,
     MetricValue,
 )
 from training.data import ReplayBatch, build_replay_data_loader
@@ -104,10 +106,13 @@ class TrainingBatchMetrics:
     black_score_loss: float
     white_score_loss: float
     policy_entropy: float
+    target_policy_entropy: float
+    policy_kl_divergence: float
     learning_rate: float
     gradient_norm: float
     amp_retries: int
     elapsed_seconds: float
+    gradient_clipped: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -125,6 +130,8 @@ class TrainingIterationMetrics:
     black_score_loss: float
     white_score_loss: float
     policy_entropy: float
+    target_policy_entropy: float
+    policy_kl_divergence: float
     starting_learning_rate: float
     ending_learning_rate: float
     mean_gradient_norm: float
@@ -134,6 +141,7 @@ class TrainingIterationMetrics:
     amp_enabled: bool
     device: str
     checkpoint_id: str | None = None
+    gradient_clip_fraction: float = 0.0
 
     def checkpoint_metrics(self) -> dict[str, MetricValue]:
         """Return the stable scalar subset persisted in checkpoint metadata."""
@@ -148,9 +156,12 @@ class TrainingIterationMetrics:
             "black_score_loss": self.black_score_loss,
             "white_score_loss": self.white_score_loss,
             "policy_entropy": self.policy_entropy,
+            "target_policy_entropy": self.target_policy_entropy,
+            "policy_kl_divergence": self.policy_kl_divergence,
             "learning_rate": self.ending_learning_rate,
             "mean_gradient_norm": self.mean_gradient_norm,
             "maximum_gradient_norm": self.maximum_gradient_norm,
+            "gradient_clip_fraction": self.gradient_clip_fraction,
             "amp_retries": self.amp_retries,
             "training_elapsed_seconds": self.elapsed_seconds,
             "amp_enabled": self.amp_enabled,
@@ -192,6 +203,21 @@ def build_scheduler(optimizer: Optimizer, config: TrainingConfig) -> LambdaLR:
     return LambdaLR(optimizer, schedule)
 
 
+def build_restart_scheduler(
+    optimizer: Optimizer, config: SchedulerRestartConfig
+) -> LambdaLR:
+    """Construct one new LR cycle without recreating the restored optimizer."""
+
+    for parameter_group in optimizer.param_groups:
+        parameter_group["lr"] = config.peak_learning_rate
+        parameter_group["initial_lr"] = config.peak_learning_rate
+
+    def schedule(step: int) -> float:
+        return restart_cosine_multiplier(step, config)
+
+    return LambdaLR(optimizer, schedule)
+
+
 def warmup_cosine_multiplier(step: int, config: TrainingConfig) -> float:
     """Return the LR multiplier for one optimizer-step index."""
 
@@ -204,6 +230,24 @@ def warmup_cosine_multiplier(step: int, config: TrainingConfig) -> float:
     if decay_step >= config.scheduler_decay_steps:
         return minimum
     progress = decay_step / config.scheduler_decay_steps
+    cosine = 0.5 * (1.0 + cos(pi * progress))
+    return minimum + (1.0 - minimum) * cosine
+
+
+def restart_cosine_multiplier(step: int, config: SchedulerRestartConfig) -> float:
+    """Return the LR multiplier for a bounded scheduler-restart cycle."""
+
+    if type(step) is not int or step < 0:
+        raise TrainerConfigurationError("Scheduler step must be nonnegative")
+    initial = config.initial_learning_rate / config.peak_learning_rate
+    minimum = config.minimum_learning_rate / config.peak_learning_rate
+    if step < config.warmup_steps:
+        progress = step / config.warmup_steps
+        return initial + (1.0 - initial) * progress
+    decay_step = step - config.warmup_steps
+    if decay_step >= config.decay_steps:
+        return minimum
+    progress = decay_step / config.decay_steps
     cosine = 0.5 * (1.0 + cos(pi * progress))
     return minimum + (1.0 - minimum) * cosine
 
@@ -372,14 +416,34 @@ class Trainer:
             )
 
         generator = torch.Generator(device="cpu")
-        generator.manual_seed(
-            _iteration_seed(self._config.training.random_seed, resolved_iteration)
+        iteration_seed = _iteration_seed(
+            self._config.training.random_seed, resolved_iteration
         )
+        generator.manual_seed(iteration_seed)
+        loader_source = replay
+        if self._config.replay.sampling_mode == "mixed":
+            sample_count = min(
+                self._config.replay.sample_positions or replay_size,
+                replay_size,
+            )
+            if sample_count < self._config.training.batch_size:
+                raise TrainerStateError(
+                    "Mixed replay sample_positions must cover one training batch"
+                )
+            loader_source = replay.sample_mixed(
+                sample_count,
+                random.Random(iteration_seed),
+                uniform_fraction=self._config.replay.uniform_fraction,
+                recent_fraction=self._config.replay.recent_fraction,
+                hard_fraction=self._config.replay.hard_fraction,
+                recent_window_fraction=self._config.replay.recent_window_fraction,
+            )
         loader = build_replay_data_loader(
-            replay,
+            loader_source,
             self._specification,
             self._config.training,
             generator=generator,
+            augmentation_seed=iteration_seed,
         )
         iterator = iter(loader)
         batch_metrics: list[TrainingBatchMetrics] = []
@@ -451,20 +515,37 @@ class Trainer:
         if self._checkpoint_manager is None:
             raise TrainerStateError("CheckpointManager is required for resume")
         metadata = self._checkpoint_manager.read_metadata(identifier)
-        _validate_resume_configuration(metadata, self._config.training)
+        restart = self._config.training.scheduler_restart
+        apply_scheduler_restart = (
+            restart.enabled and metadata.checkpoint_id == restart.checkpoint_id
+        )
+        _validate_resume_configuration(
+            metadata,
+            self._config.training,
+            allow_scheduler_restart=apply_scheduler_restart,
+        )
         completed_steps = _required_nonnegative_metric(
             metadata.metrics, "training_steps_completed"
         )
+        expected_scheduler_steps = _optional_nonnegative_metric(
+            metadata.metrics,
+            "scheduler_steps_completed",
+            fallback=completed_steps,
+        )
+        if restart.enabled and not apply_scheduler_restart:
+            self._scheduler = build_restart_scheduler(self._optimizer, restart)
         restored = self._checkpoint_manager.load(
             identifier,
             model=self._model,
             optimizer=self._optimizer,
-            scheduler=self._scheduler,
+            scheduler=None if apply_scheduler_restart else self._scheduler,
             scaler=self._scaler if metadata.has_scaler else None,
             restore_rng=True,
             map_location=self._device,
         )
-        if self._scheduler.last_epoch != completed_steps:
+        if apply_scheduler_restart:
+            self._scheduler = build_restart_scheduler(self._optimizer, restart)
+        elif self._scheduler.last_epoch != expected_scheduler_steps:
             raise TrainerStateError(
                 "Checkpoint scheduler step disagrees with training metadata"
             )
@@ -564,12 +645,18 @@ class Trainer:
             gradient_norm=float(gradient_norm.detach().item()),
             amp_retries=attempt,
             elapsed_seconds=perf_counter() - started_at,
+            gradient_clipped=(
+                float(gradient_norm.detach().item())
+                > self._config.training.gradient_clip_norm
+            ),
         )
 
     def _save_checkpoint(self, metrics: TrainingIterationMetrics) -> str:
         if self._checkpoint_manager is None:
             raise TrainerStateError("CheckpointManager is unavailable")
         checkpoint_id = f"iteration-{metrics.iteration:06d}"
+        checkpoint_metrics = metrics.checkpoint_metrics()
+        checkpoint_metrics["scheduler_steps_completed"] = self._scheduler.last_epoch
         metadata = self._checkpoint_manager.save(
             checkpoint_id,
             model=self._model,
@@ -578,7 +665,7 @@ class Trainer:
             scaler=self._scaler,
             iteration=metrics.iteration,
             config=self._config,
-            metrics=metrics.checkpoint_metrics(),
+            metrics=checkpoint_metrics,
             parent_checkpoint_id=self._parent_checkpoint_id,
             aliases=("latest",),
         )
@@ -596,9 +683,12 @@ class Trainer:
             "train/batch_black_score_loss": metrics.black_score_loss,
             "train/batch_white_score_loss": metrics.white_score_loss,
             "train/batch_policy_entropy": metrics.policy_entropy,
+            "train/batch_target_policy_entropy": metrics.target_policy_entropy,
+            "train/batch_policy_kl_divergence": metrics.policy_kl_divergence,
             "train/learning_rate": metrics.learning_rate,
             "train/gradient_norm": metrics.gradient_norm,
             "train/amp_retries": float(metrics.amp_retries),
+            "train/gradient_clipped": float(metrics.gradient_clipped),
             "train/batch_seconds": metrics.elapsed_seconds,
         }
         for tag, value in values.items():
@@ -612,6 +702,9 @@ class Trainer:
             "train/iteration_black_score_loss": metrics.black_score_loss,
             "train/iteration_white_score_loss": metrics.white_score_loss,
             "train/iteration_policy_entropy": metrics.policy_entropy,
+            "train/iteration_target_policy_entropy": metrics.target_policy_entropy,
+            "train/iteration_policy_kl_divergence": metrics.policy_kl_divergence,
+            "train/iteration_gradient_clip_fraction": metrics.gradient_clip_fraction,
             "train/iteration_positions": float(metrics.positions),
             "train/iteration_seconds": metrics.elapsed_seconds,
         }
@@ -642,6 +735,7 @@ def _batch_metrics(
     gradient_norm: float,
     amp_retries: int,
     elapsed_seconds: float,
+    gradient_clipped: bool,
 ) -> TrainingBatchMetrics:
     values = tuple(float(item.detach().item()) for item in loss)
     if any(not isfinite(value) for value in (*values, gradient_norm, elapsed_seconds)):
@@ -657,10 +751,13 @@ def _batch_metrics(
         black_score_loss=values[3],
         white_score_loss=values[4],
         policy_entropy=values[5],
+        target_policy_entropy=values[6],
+        policy_kl_divergence=values[7],
         learning_rate=learning_rate,
         gradient_norm=gradient_norm,
         amp_retries=amp_retries,
         elapsed_seconds=elapsed_seconds,
+        gradient_clipped=gradient_clipped,
     )
 
 
@@ -697,6 +794,8 @@ def _aggregate_iteration(
         black_score_loss=weighted("black_score_loss"),
         white_score_loss=weighted("white_score_loss"),
         policy_entropy=weighted("policy_entropy"),
+        target_policy_entropy=weighted("target_policy_entropy"),
+        policy_kl_divergence=weighted("policy_kl_divergence"),
         starting_learning_rate=batches[0].learning_rate,
         ending_learning_rate=ending_learning_rate,
         mean_gradient_norm=sum(gradient_norms) / len(gradient_norms),
@@ -705,21 +804,102 @@ def _aggregate_iteration(
         elapsed_seconds=elapsed_seconds,
         amp_enabled=amp_enabled,
         device=device,
+        gradient_clip_fraction=(
+            sum(float(batch.gradient_clipped) for batch in batches) / len(batches)
+        ),
     )
 
 
 def _validate_resume_configuration(
-    metadata: CheckpointMetadata, training: TrainingConfig
+    metadata: CheckpointMetadata,
+    training: TrainingConfig,
+    *,
+    allow_scheduler_restart: bool,
 ) -> None:
     stored = metadata.configuration.get("training")
-    if not isinstance(stored, Mapping) or dict(stored) != asdict(training):
+    if not isinstance(stored, Mapping):
+        raise TrainerStateError(
+            "Checkpoint training configuration does not match the active Trainer"
+        )
+    active = asdict(training)
+    stored_configuration = dict(stored)
+    _normalize_legacy_symmetry_augmentation(stored_configuration, active)
+    if allow_scheduler_restart:
+        _normalize_legacy_scheduler_restart(stored_configuration, active)
+        active_restart = active["scheduler_restart"]
+        stored_restart = stored_configuration["scheduler_restart"]
+        if not isinstance(active_restart, Mapping) or not isinstance(
+            stored_restart, Mapping
+        ):
+            raise TrainerStateError(
+                "Checkpoint training configuration does not match the active Trainer"
+            )
+        active_restart = dict(active_restart)
+        stored_restart = dict(stored_restart)
+        active_restart["enabled"] = False
+        active_restart["checkpoint_id"] = "none"
+        if stored_restart != active_restart:
+            raise TrainerStateError(
+                "Scheduler restart may change only enabled and checkpoint_id"
+            )
+        active["scheduler_restart"] = active_restart
+    elif (
+        "scheduler_restart" not in stored_configuration
+        and not training.scheduler_restart.enabled
+    ):
+        stored_configuration["scheduler_restart"] = active["scheduler_restart"]
+    if stored_configuration != active:
         raise TrainerStateError(
             "Checkpoint training configuration does not match the active Trainer"
         )
 
 
+def _normalize_legacy_scheduler_restart(
+    stored: dict[str, JsonValue], active: Mapping[str, object]
+) -> None:
+    if "scheduler_restart" not in stored:
+        restart = active.get("scheduler_restart")
+        if not isinstance(restart, Mapping):
+            raise TrainerStateError(
+                "Checkpoint training configuration does not match the active Trainer"
+            )
+        disabled = dict(restart)
+        disabled["enabled"] = False
+        disabled["checkpoint_id"] = "none"
+        stored["scheduler_restart"] = disabled
+
+
+def _normalize_legacy_symmetry_augmentation(
+    stored: dict[str, JsonValue], active: Mapping[str, object]
+) -> None:
+    """Allow pre-augmentation checkpoints to resume with current D4 policy."""
+
+    if "symmetry_augmentation" in stored:
+        return
+    augmentation = active.get("symmetry_augmentation")
+    if not isinstance(augmentation, str):
+        raise TrainerStateError(
+            "Checkpoint training configuration does not match the active Trainer"
+        )
+    stored["symmetry_augmentation"] = augmentation
+
+
 def _required_nonnegative_metric(metrics: Mapping[str, MetricValue], name: str) -> int:
     value = metrics.get(name)
+    if type(value) is not int or value < 0:
+        raise TrainerStateError(
+            f"Checkpoint metric {name} must be a nonnegative integer"
+        )
+    return value
+
+
+def _optional_nonnegative_metric(
+    metrics: Mapping[str, MetricValue],
+    name: str,
+    *,
+    fallback: int,
+) -> int:
+    value = metrics.get(name, fallback)
     if type(value) is not int or value < 0:
         raise TrainerStateError(
             f"Checkpoint metric {name} must be a nonnegative integer"

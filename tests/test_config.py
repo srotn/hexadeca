@@ -14,7 +14,7 @@ def test_default_config_matches_confirmed_project_parameters() -> None:
 
     config = load_config()
 
-    assert config.project.config_schema_version == 7
+    assert config.project.config_schema_version == 14
     assert config.rules.board_size == 16
     assert config.rules.score_occupied_cells is True
     assert config.rules.majority_award == "one-point"
@@ -25,7 +25,8 @@ def test_default_config_matches_confirmed_project_parameters() -> None:
     assert config.network.channels == 128
     assert config.network.score_normalizer == 256.0
     assert config.network.policy_size == 256
-    assert config.mcts.training_simulations == 800
+    assert config.mcts.training_simulations == 1600
+    assert config.mcts.engine == "native"
     assert config.mcts.evaluation_simulations == 1600
     assert config.mcts.dirichlet_alpha == 0.15
     assert config.mcts.dirichlet_epsilon == 0.25
@@ -36,15 +37,18 @@ def test_default_config_matches_confirmed_project_parameters() -> None:
     assert config.mcts.max_inference_batch_size == 32
     assert config.mcts.opening_temperature == 1.0
     assert config.mcts.endgame_temperature == 0.0
+    assert config.mcts.exact_endgame_enabled is True
+    assert config.mcts.exact_endgame_max_legal_moves == 8
     assert config.replay.capacity_positions == 200_000
     assert config.replay.persistence_enabled is True
     assert config.replay.persistence_file_name == "replay.sqlite3"
     assert config.replay.persistence_chunk_size == 1_024
     assert config.self_play.games_per_iteration == 32
-    assert config.self_play.worker_processes == 4
+    assert config.self_play.worker_processes == 16
     assert config.self_play.worker_torch_threads == 1
+    assert config.self_play.inference_transport == "object"
     assert config.self_play.inference_max_batch_size == 256
-    assert config.self_play.inference_batch_wait_seconds == 0.002
+    assert config.self_play.inference_batch_wait_seconds == 0.005
     assert config.self_play.inference_response_timeout_seconds == 120.0
     assert config.self_play.worker_shutdown_timeout_seconds == 10.0
     assert config.self_play.random_seed == 20_260_803
@@ -64,6 +68,7 @@ def test_default_config_matches_confirmed_project_parameters() -> None:
     assert config.training.data_loader_prefetch_factor == 2
     assert config.training.data_loader_pin_memory is True
     assert config.training.data_loader_drop_last is True
+    assert config.training.symmetry_augmentation == "d4"
     assert config.training.amp_enabled is True
     assert config.training.amp_dtype == "float16"
     assert config.training.amp_initial_scale == 65_536.0
@@ -75,6 +80,13 @@ def test_default_config_matches_confirmed_project_parameters() -> None:
     assert config.training.scheduler_warmup_steps == 1_000
     assert config.training.scheduler_decay_steps == 100_000
     assert config.training.scheduler_minimum_learning_rate == 0.00003
+    assert config.training.scheduler_restart.enabled is False
+    assert config.training.scheduler_restart.checkpoint_id == "none"
+    assert config.training.scheduler_restart.initial_learning_rate == 0.00003
+    assert config.training.scheduler_restart.peak_learning_rate == 0.0001
+    assert config.training.scheduler_restart.warmup_steps == 1_000
+    assert config.training.scheduler_restart.decay_steps == 30_000
+    assert config.training.scheduler_restart.minimum_learning_rate == 0.00003
     assert config.training.checkpoint_interval_iterations == 1
     assert config.training.tensorboard_enabled is True
     assert config.training.tensorboard_log_interval_batches == 1
@@ -111,7 +123,100 @@ def test_default_config_matches_confirmed_project_parameters() -> None:
     assert config.benchmark.trainer_benchmark_measurement_batches == 10
     assert config.benchmark.evaluation_benchmark_games == 4
     assert config.benchmark.evaluation_benchmark_simulations == 32
+    assert config.benchmark.native_warmup_iterations == 5
+    assert config.benchmark.native_measurement_iterations == 20
+    assert config.benchmark.native_feature_batch_size == 96
+    assert config.benchmark.native_mcts_simulations == 800
+    assert config.benchmark.monitoring_warmup_events == 100
+    assert config.benchmark.monitoring_measurement_events == 1_000
+    assert config.benchmark.transport_warmup_iterations == 10
+    assert config.benchmark.transport_measurement_iterations == 100
+    assert config.benchmark.transport_batch_size == 32
     assert config.paths.evaluation_directory.as_posix() == "evaluation-results"
+    assert config.monitoring.bind_host == "0.0.0.0"
+    assert config.monitoring.bind_port == 5555
+    assert config.monitoring.training_device == "auto"
+    assert config.monitoring.auto_resume is True
+    assert config.monitoring.event_buffer_capacity == 4_096
+    assert config.monitoring.event_replay_limit == 2_048
+    assert config.monitoring.status_refresh_interval_seconds == 5.0
+    assert config.monitoring.evaluation_enabled is True
+    assert config.monitoring.evaluation_interval_iterations == 50
+    assert config.monitoring.interactive_move_simulations_default == 1600
+    assert config.monitoring.interactive_move_simulations_minimum == 200
+    assert config.monitoring.interactive_move_simulations_maximum == 3200
+    assert config.monitoring.interactive_move_simulations_step == 200
+    assert config.monitoring.interactive_analysis_simulations == 1600
+
+
+def test_compact_transport_profile_overrides_only_the_transport() -> None:
+    """The Stage 12.2 benchmark profile is an explicit opt-in."""
+
+    profile = Path("config/compact-inference.toml")
+    config = load_config(profile_path=profile)
+
+    assert config.self_play.inference_transport == "compact"
+    assert config.self_play.worker_processes == 16
+    assert config.mcts.training_simulations == 1600
+
+
+def test_scheduler_restart_profile_targets_one_exact_checkpoint() -> None:
+    """The recovery profile opts into one auditable scheduler-only restart."""
+
+    config = load_config(
+        profile_path=Path("config/compact-scheduler-restart-iteration-001870.toml")
+    )
+
+    assert config.self_play.inference_transport == "compact"
+    assert config.training.scheduler_restart.enabled is True
+    assert config.training.scheduler_restart.checkpoint_id == "iteration-001870"
+    assert config.training.scheduler_restart.peak_learning_rate == 0.0001
+
+
+@pytest.mark.parametrize(
+    ("override", "message"),
+    [
+        (
+            {
+                "training.scheduler_restart.enabled": True,
+                "training.scheduler_restart.checkpoint_id": "none",
+            },
+            "must identify a checkpoint",
+        ),
+        (
+            {
+                "training.scheduler_restart.enabled": True,
+                "training.scheduler_restart.checkpoint_id": "latest",
+            },
+            "immutable checkpoint ID",
+        ),
+        (
+            {
+                "training.scheduler_restart.initial_learning_rate": 0.0002,
+                "training.scheduler_restart.peak_learning_rate": 0.0001,
+            },
+            "initial_learning_rate must not exceed",
+        ),
+        (
+            {
+                "training.scheduler_restart.initial_learning_rate": 0.00003,
+                "training.scheduler_restart.minimum_learning_rate": 0.00004,
+            },
+            "minimum_learning_rate must not exceed",
+        ),
+        (
+            {"training.scheduler_restart.peak_learning_rate": 0.0004},
+            "must not exceed training.learning_rate",
+        ),
+    ],
+)
+def test_invalid_scheduler_restart_parameters_are_rejected(
+    override: dict[str, object], message: str
+) -> None:
+    """Recovery cycles reject ambiguous identities and unsafe LR bounds."""
+
+    with pytest.raises(ConfigError, match=message):
+        load_config(overrides=override)
 
 
 def test_profile_and_overrides_are_applied_in_precedence_order(
@@ -149,6 +254,37 @@ def test_unknown_configuration_schema_version_is_rejected() -> None:
 
     with pytest.raises(ConfigError, match=r"Unsupported.*config_schema_version"):
         load_config(overrides={"project.config_schema_version": 99})
+
+
+@pytest.mark.parametrize(
+    ("override", "message"),
+    [
+        ({"monitoring.bind_port": 65_536}, "at most 65535"),
+        ({"monitoring.event_replay_limit": 4_097}, "must not exceed"),
+        ({"monitoring.status_refresh_interval_seconds": 0.0}, "positive"),
+        (
+            {
+                "monitoring.evaluation_enabled": True,
+                "monitoring.evaluation_interval_iterations": 0,
+            },
+            "must be positive",
+        ),
+        (
+            {
+                "monitoring.client_reconnect_delay_seconds": 2.0,
+                "monitoring.client_reconnect_max_delay_seconds": 1.0,
+            },
+            "must be at least",
+        ),
+    ],
+)
+def test_invalid_monitoring_parameters_are_rejected(
+    override: dict[str, object], message: str
+) -> None:
+    """Public server, recovery, and evaluation controls are schema-validated."""
+
+    with pytest.raises(ConfigError, match=message):
+        load_config(overrides=override)
 
 
 def test_incompatible_ruleset_dimensions_are_rejected() -> None:
@@ -220,6 +356,7 @@ def test_invalid_replay_and_loader_parameters_are_rejected(
         ({"self_play.games_per_iteration": 0}, "greater than zero"),
         ({"self_play.worker_processes": 0}, "greater than zero"),
         ({"self_play.worker_torch_threads": 0}, "greater than zero"),
+        ({"self_play.inference_transport": "invalid"}, "must be one of"),
         ({"self_play.inference_batch_wait_seconds": 0.0}, "positive"),
         ({"self_play.inference_response_timeout_seconds": 0.0}, "positive"),
         ({"self_play.worker_shutdown_timeout_seconds": 0.0}, "positive"),

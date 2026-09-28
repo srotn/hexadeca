@@ -39,7 +39,11 @@ def run_evaluation_benchmark(
     cuda_available = torch.cuda.is_available()
     use_cuda = include_cuda and cuda_available
     device = torch.device("cuda" if use_cuda else "cpu")
-    mcts = replace(config.mcts, evaluation_simulations=simulations)
+    mcts = replace(
+        config.mcts,
+        evaluation_simulations=simulations,
+        exact_endgame_enabled=False,
+    )
     evaluation = replace(
         config.evaluation,
         game_count=game_count,

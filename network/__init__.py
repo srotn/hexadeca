@@ -8,7 +8,13 @@ from network.errors import (
     PolicyMaskError,
     TrainingTargetError,
 )
-from network.features import HISTORY_POSITIONS, encode_batch, encode_state
+from network.features import (
+    HISTORY_POSITIONS,
+    encode_batch,
+    encode_batch_gpu,
+    encode_packed_batch,
+    encode_state,
+)
 from network.loss import AlphaZeroLoss, LossOutput, LossWeights, TrainingTargets
 from network.model import NetworkOutput, PolicyValueNetwork, ResidualBlock
 from network.policy import (
@@ -41,6 +47,8 @@ __all__ = [
     "TrainingTargetError",
     "TrainingTargets",
     "encode_batch",
+    "encode_batch_gpu",
+    "encode_packed_batch",
     "encode_state",
     "mask_policy_logits",
     "masked_policy_log_probabilities",

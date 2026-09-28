@@ -19,15 +19,20 @@ class MctsEdge:
     value_sum: float = 0.0
     virtual_visit_count: int = 0
     virtual_value_sum: float = 0.0
+    solved_value: float | None = None
 
     def __post_init__(self) -> None:
         if not isfinite(self.prior) or not 0.0 <= self.prior <= 1.0:
             raise NodeStateError("Edge prior must be finite and within [0, 1]")
+        if self.solved_value is not None:
+            _validate_value(self.solved_value)
 
     @property
     def mean_value(self) -> float:
         """Return committed Q from the parent player's perspective."""
 
+        if self.solved_value is not None:
+            return self.solved_value
         return self.value_sum / self.visit_count if self.visit_count else 0.0
 
     @property
@@ -40,6 +45,8 @@ class MctsEdge:
     def effective_mean_value(self) -> float:
         """Return Q after applying all current virtual-loss reservations."""
 
+        if self.solved_value is not None and self.virtual_visit_count == 0:
+            return self.solved_value
         visits = self.effective_visit_count
         if visits == 0:
             return 0.0
@@ -87,11 +94,14 @@ class MctsNode:
     children: dict[int, MctsEdge] = field(default_factory=dict)
     expanded: bool = False
     evaluation_in_flight: bool = False
+    solved_value: float | None = None
 
     @property
     def mean_value(self) -> float:
         """Return committed Q from this node's side-to-play perspective."""
 
+        if self.solved_value is not None:
+            return self.solved_value
         return self.value_sum / self.visit_count if self.visit_count else 0.0
 
     def expand(self, priors: dict[int, float]) -> None:
@@ -134,6 +144,8 @@ class MctsNode:
         selected: tuple[int, MctsEdge] | None = None
         selected_score = float("-inf")
         for action, edge in self.children.items():
+            if self.solved_value is not None and edge.solved_value != self.solved_value:
+                continue
             child = edge.child
             if child is not None and child.evaluation_in_flight and not child.expanded:
                 continue

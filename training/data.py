@@ -10,6 +10,7 @@ from torch.utils.data import DataLoader, Dataset
 
 from config.schema import TrainingConfig
 from network import NetworkSpecification, TrainingTargets, encode_batch
+from training.augmentation import augment_training_batch, select_d4_transform
 from training.errors import ReplayDataLoaderError
 from training.replay import ReplayBuffer, ReplaySample, ReplaySnapshot
 
@@ -51,10 +52,20 @@ class ReplayCollator:
     """Encode compact states and normalize raw score targets per batch."""
 
     specification: NetworkSpecification
+    symmetry_augmentation: str = "none"
+    augmentation_seed: int = 0
 
     def __call__(self, samples: list[ReplaySample]) -> ReplayBatch:
         if not samples:
             raise ReplayDataLoaderError("Cannot collate an empty replay batch")
+        if self.symmetry_augmentation not in {"none", "d4"}:
+            raise ReplayDataLoaderError(
+                f"Unsupported symmetry augmentation: {self.symmetry_augmentation!r}"
+            )
+        if type(self.augmentation_seed) is not int or self.augmentation_seed < 0:
+            raise ReplayDataLoaderError(
+                "Augmentation seed must be a nonnegative integer"
+            )
         states = tuple(sample.state for sample in samples)
         features = encode_batch(states, self.specification)
         policy = torch.tensor(
@@ -63,6 +74,22 @@ class ReplayCollator:
         legal_mask = torch.tensor(
             [sample.state.legal_mask for sample in samples], dtype=torch.bool
         )
+        if self.symmetry_augmentation == "d4":
+            transform_indices = tuple(
+                select_d4_transform(
+                    sample.state,
+                    seed=self.augmentation_seed,
+                    sample_offset=index,
+                )
+                for index, sample in enumerate(samples)
+            )
+            features, policy, legal_mask = augment_training_batch(
+                features,
+                policy,
+                legal_mask,
+                transform_indices,
+                board_size=self.specification.board_size,
+            )
         normalizer = self.specification.score_normalizer
         return ReplayBatch(
             features=features,
@@ -103,6 +130,7 @@ def build_replay_data_loader(
     config: TrainingConfig,
     *,
     generator: torch.Generator | None = None,
+    augmentation_seed: int = 0,
 ) -> DataLoader[ReplayBatch]:
     """Build a deterministic loader over a point-in-time replay snapshot."""
 
@@ -123,7 +151,11 @@ def build_replay_data_loader(
         )
 
     dataset = _ReplayDataset(snapshot)
-    collator = ReplayCollator(specification)
+    collator = ReplayCollator(
+        specification,
+        symmetry_augmentation=config.symmetry_augmentation,
+        augmentation_seed=augmentation_seed,
+    )
     if config.data_loader_workers > 0:
         loader = DataLoader(
             dataset,

@@ -1,6 +1,6 @@
 [project]
 name = "hexadeca-alpha-zero"
-config_schema_version = 7
+config_schema_version = 14
 
 [rules]
 ruleset_id = "hexadeca-v1"
@@ -28,7 +28,8 @@ batch_norm_epsilon = 0.00001
 batch_norm_momentum = 0.1
 
 [mcts]
-training_simulations = 800
+engine = "native"
+training_simulations = 1600
 evaluation_simulations = 1600
 c_puct = 2.3
 root_noise_enabled = true
@@ -41,19 +42,29 @@ max_inference_batch_size = 32
 stochastic_plies = 15
 opening_temperature = 1.0
 endgame_temperature = 0.0
+exact_endgame_enabled = true
+exact_endgame_max_legal_moves = 8
 
 [replay]
 capacity_positions = 200000
 persistence_enabled = true
 persistence_file_name = "replay.sqlite3"
 persistence_chunk_size = 1024
+# Keep the established uniform sampler until a mixed-sampling probe is approved.
+sampling_mode = "uniform"
+sample_positions = 0
+uniform_fraction = 0.50
+recent_fraction = 0.25
+hard_fraction = 0.25
+recent_window_fraction = 0.50
 
 [self_play]
 games_per_iteration = 32
-worker_processes = 4
+worker_processes = 16
 worker_torch_threads = 1
+inference_transport = "object"
 inference_max_batch_size = 256
-inference_batch_wait_seconds = 0.002
+inference_batch_wait_seconds = 0.005
 inference_response_timeout_seconds = 120.0
 worker_shutdown_timeout_seconds = 10.0
 random_seed = 20260803
@@ -75,6 +86,7 @@ data_loader_workers = 0
 data_loader_prefetch_factor = 2
 data_loader_pin_memory = true
 data_loader_drop_last = true
+symmetry_augmentation = "d4"
 amp_enabled = true
 amp_dtype = "float16"
 amp_initial_scale = 65536.0
@@ -96,6 +108,15 @@ policy_loss_weight = 1.0
 win_loss_weight = 1.0
 black_score_loss_weight = 1.0
 white_score_loss_weight = 1.0
+
+[training.scheduler_restart]
+enabled = false
+checkpoint_id = "none"
+initial_learning_rate = 0.00003
+peak_learning_rate = 0.0001
+warmup_steps = 1000
+decay_steps = 30000
+minimum_learning_rate = 0.00003
 
 [evaluation]
 game_count = 100
@@ -142,6 +163,15 @@ trainer_benchmark_warmup_batches = 3
 trainer_benchmark_measurement_batches = 10
 evaluation_benchmark_games = 4
 evaluation_benchmark_simulations = 32
+native_warmup_iterations = 5
+native_measurement_iterations = 20
+native_feature_batch_size = 96
+native_mcts_simulations = 800
+monitoring_warmup_events = 100
+monitoring_measurement_events = 1000
+transport_warmup_iterations = 10
+transport_measurement_iterations = 100
+transport_batch_size = 32
 random_seed = 20260803
 
 [paths]
@@ -156,3 +186,31 @@ level = "INFO"
 console_enabled = true
 file_enabled = true
 file_name = "application.jsonl"
+
+[monitoring]
+bind_host = "0.0.0.0"
+bind_port = 5555
+training_device = "auto"
+auto_resume = true
+iteration_limit = 0
+replay_save_interval_iterations = 1
+event_buffer_capacity = 4096
+event_replay_limit = 2048
+telemetry_interval_seconds = 5.0
+status_refresh_interval_seconds = 5.0
+gpu_probe_timeout_seconds = 1.0
+websocket_ping_interval_seconds = 20.0
+websocket_ping_timeout_seconds = 20.0
+websocket_poll_interval_seconds = 0.1
+websocket_max_message_bytes = 1048576
+client_reconnect_delay_seconds = 1.0
+client_reconnect_max_delay_seconds = 15.0
+log_tail_lines = 500
+frontend_file_name = "Hexadeca.html"
+evaluation_enabled = true
+evaluation_interval_iterations = 50
+interactive_move_simulations_default = 1600
+interactive_move_simulations_minimum = 200
+interactive_move_simulations_maximum = 3200
+interactive_move_simulations_step = 200
+interactive_analysis_simulations = 1600

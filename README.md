@@ -1,106 +1,122 @@
-# Hexadeca AlphaZero
+# Hexadeca
 
-This repository develops a neural-network-guided AlphaZero agent for the
-Hexadeca board game through gated stages. The current implementation is Stage
-11: deterministic multiprocess self-play, a configuration-driven CUDA Trainer,
-and paired candidate-versus-best Arena evaluation with confidence-aware model
-promotion and immutable reports.
+**Hexadeca 是一个原创棋类与计算机博弈 AI 研究项目。**
 
-The authoritative game rules are recorded in [`game_rule.md`](game_rule.md).
-Architecture and stage gates are documented in
-[`STAGE1_DESIGN.md`](STAGE1_DESIGN.md).
+项目研究一个确定性的 16×16 空间策略游戏，并提供从规则引擎、神经网络、蒙特卡洛树搜索到自对弈训练和对战评估的完整实验平台。项目重点是让一个结构清晰、可复现实验的原创棋类成为计算机博弈研究对象，而不是复刻某个已有棋类。
 
-## Local setup
+## 游戏概览
 
-```powershell
+- 16×16 非环绕棋盘，黑方先行，双方交替落子。
+- 每回合在一个空格放置一枚棋子；棋子不移动、不吃子、不替换。
+- 候选格必须与所有已有棋子保持 Chebyshev 距离大于 1，因此任意棋子都会禁止其自身及周围八邻格。
+- 没有随机事件、隐藏信息、Pass 或同时行动。
+- 没有合法落点时立即终局。
+- 终局对全部 256 个格点进行距离层计分，首个黑白数量不相等的欧氏距离层决定该格归属。
+- 256 个可能的动作位置；由 2×2 分块可知理论最大长度为 64 plies。
+
+正式规则见 [`docs/rules/hexadeca-v1.md`](docs/rules/hexadeca-v1.md)。规则版本 `hexadeca-v1` 不随本次开源包装改变。
+
+## AI 系统
+
+当前 16×16 实现包括：
+
+- Policy Network：输出 256 个动作 logits，并在搜索时使用合法动作掩码；
+- Value Network：预测当前行棋方的结果以及双方归一化终局分数；
+- 残差 CNN 主干与 D4 数据增强；
+- MCTS / PUCT；
+- First Play Urgency（FPU）；
+- Virtual Loss；
+- Batch Leaf Selection 与 batched neural inference；
+- Dirichlet 根噪声和温度采样，用于自对弈探索；
+- Replay 数据、AdamW 训练和 checkpoint 管理；
+- 可选 C++20 Native 棋盘、计分、特征和搜索内核；
+- 自对弈、换色对战、置信区间和相对 Elo 评估。
+
+精确残局模块目前用于小规模剩余局面的 WDL 求解，不代表 16×16 已被完全求解。当前公开版本也不附带训练 checkpoint、Replay buffer 或实验运行目录。
+
+## 复杂度摘要
+
+下表是基于当前 `hexadeca-v1` 规则的组合计数与结构分析，不是程序 benchmark，也不是对所有状态逐一枚举后的运行时间测量。
+
+| 量 | 结果 |
+|---|---:|
+| Maximum game length | 64 plies |
+| Action space | 256 |
+| Reachable colored states | ≈ 1.56896 × 10^46 |
+| Uncolored legal occupied-set states | ≈ 4.42220 × 10^34 |
+| Full game-tree history nodes | ≈ 2.04243 × 10^104 |
+| State-space information complexity | ≈ 153.46 bits |
+| Game-tree information complexity | ≈ 346.51 bits |
+| State-space peak | 44 plies |
+| Peak states at 44 plies | ≈ 2.09534 × 10^45 |
+| Game-tree peak | 63 plies |
+| Opening branching factor | 256 |
+| Effective average branching factor | ≈ 42.63 |
+
+The state-space peak and game-tree peak occur at different depths: around 44 plies for distinct states and around 63 plies for historical game-tree nodes.
+
+Selected late-game layers are approximately:
+
+| Layer | States |
+|---|---:|
+| ≤1 ply from theoretical maximum | ≈ 2.896 × 10^34 |
+| ≤4 plies | ≈ 2.175 × 10^38 |
+| ≤8 plies | ≈ 6.304 × 10^41 |
+| ≤10 plies | ≈ 1.127 × 10^43 |
+| ≤12 plies | ≈ 1.112 × 10^44 |
+| ≤16 plies | ≈ 2.373 × 10^45 |
+| 64-piece terminal-layer states | ≈ 4.673 × 10^32 |
+
+推导口径、符号和限制见 [`docs/complexity.md`](docs/complexity.md)。
+
+## 安装
+
+项目需要 Python 3.11–3.13。推荐在虚拟环境中安装：
+
+```bash
 python -m venv .venv
-.\.venv\Scripts\python -m pip install --upgrade pip
-.\.venv\Scripts\python -m pip install -e ".[dev]"
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -e ".[dev]"
 ```
 
-Run the project quality checks:
+Native C++20 扩展是可选加速路径。需要已安装的 C++20 编译工具时，可以执行：
 
-```powershell
-.\.venv\Scripts\python -m pytest
-.\.venv\Scripts\ruff format --check .
-.\.venv\Scripts\ruff check .
-.\.venv\Scripts\mypy
+```bash
+python setup.py build_ext --inplace --force
 ```
 
-Run the configured Stage 3 board benchmark:
+没有编译扩展时，Python 规则引擎和研究代码仍可用于规则测试、网络测试和 CPU 实验。
 
-```powershell
-.\.venv\Scripts\python -m benchmark.board_engine
+## 基本验证
+
+```bash
+python -m pytest tests/test_board.py tests/test_environment.py tests/test_scoring.py
+python -m pytest
 ```
 
-Run the configured Stage 4 scoring benchmark:
+完整架构和模块关系见 [`docs/architecture.md`](docs/architecture.md)。测试、格式化和类型检查命令以项目配置为准；CUDA、Native 编译器和 PyTorch 版本会影响可运行的实验范围。
 
-```powershell
-.\.venv\Scripts\python -m benchmark.scoring
-```
-
-Run the configured Stage 5 environment benchmark:
-
-```powershell
-.\.venv\Scripts\python -m benchmark.environment
-```
-
-Run the configured Stage 6 CPU/CUDA inference benchmark:
-
-```powershell
-.\.venv\Scripts\python -m benchmark.network
-```
-
-Run the configured Stage 7 MCTS core/CUDA benchmark:
-
-```powershell
-.\.venv\Scripts\python -m benchmark.mcts
-```
-
-Run the configured Stage 8 replay and persistence benchmark:
-
-```powershell
-.\.venv\Scripts\python -m benchmark.replay
-```
-
-Run the configured Stage 9 multiprocess self-play benchmark:
-
-```powershell
-.\.venv\Scripts\python -m benchmark.self_play
-```
-
-The command uses CUDA AMP when CUDA is available and falls back to CPU. Pass
-`--cpu-only` to force CPU inference.
-
-Run the configured Stage 10 optimizer/CUDA AMP benchmark:
-
-```powershell
-.\.venv\Scripts\python -m benchmark.trainer
-```
-
-The report measures real forward, composite loss, backward, gradient clipping,
-AdamW, and scheduler work. Pass `--cpu-only` to force float32 CPU training.
-
-Run the configured Stage 11 paired Arena benchmark:
-
-```powershell
-.\.venv\Scripts\python -m benchmark.evaluation
-```
-
-The benchmark loads two full models, runs color-swapped opening pairs through
-multiprocess MCTS, and reports complete game, simulation, and centralized
-inference throughput. Pass `--cpu-only` to force CPU inference.
-
-## Repository layout
+## 目录结构
 
 ```text
-benchmark/  Reproducible benchmark scripts and reports.
-config/     Versioned TOML configuration and validation.
-cpp/        Reserved for profile-validated C++20 acceleration.
-game/       Board, scoring, and immutable self-play environment contracts.
-mcts/       PUCT nodes, virtual loss, batched evaluator, and neural search.
-network/    Versioned features, residual policy-value model, mask, and loss.
-tests/      Unit and integration tests.
-training/   Self-play, replay, data loading, checkpoints, and training stages.
-utils/      Cross-cutting utilities, currently structured logging.
+benchmark/   可复现的规则、网络、搜索、自对弈和训练 benchmark
+config/      16×16 规则和训练配置
+cpp/         可选 C++20 加速实现
+docs/        规则、复杂度和架构说明
+game/        棋盘、终局和计分
+mcts/        PUCT、节点、策略和残局搜索
+network/     输入特征、残差网络、策略与损失
+native/      Native 扩展的 Python 接口
+tests/       规则、搜索、网络、训练和评估测试
+training/    自对弈、Replay、训练和对战评估
+utils/       通用工具
 ```
+
+## 研究状态与范围
+
+这是一个研究型开源项目。已有实现支持训练和自对弈研究，但不宣称给出游戏理论最优策略、绝对人类棋力或跨规则泛化结论。评估中的 Elo 是项目内部相对尺度。20×20 特征实验、训练产物、历史日志和本地运行目录不属于本次 16×16 公共发布范围。
+
+## 许可
+
+本项目使用 MIT License。详见 [`LICENSE`](LICENSE)。

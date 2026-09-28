@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta http-equiv="Cache-Control" content="no-cache,no-store,must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#09111b">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Hexadeca">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/svg+xml" href="icons/hexadeca-icon.svg">
+<link rel="apple-touch-icon" sizes="192x192" href="icons/hexadeca-icon-192.png">
+<title>HEXADECA</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config={theme:{extend:{colors:{"matte-black":"#0A0A0C","slate-bg":"#141417","slate-line":"#222226","player-1":"#38BDF8","player-2":"#F59E0B"},fontFamily:{sans:["Inter","system-ui","sans-serif"]},gridTemplateColumns:{"16":"repeat(16,minmax(0,1fr))"},gridTemplateRows:{"16":"repeat(16,minmax(0,1fr))"}}}}
+</script>
+<style>
+body{background-color:#0A0A0C;letter-spacing:-0.01em}
+.glass-panel{background:rgba(20,20,23,0.8);backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,0.03)}
+.forbidden-pattern{cursor:not-allowed!important}
+.forbidden-pattern::before{content:"";position:absolute;inset:5%;z-index:1;border:1px solid rgba(127,29,29,.58);box-shadow:inset 0 0 10px rgba(69,10,10,.08);pointer-events:none}
+.forbidden-pattern::after{content:"×";position:absolute;inset:0;z-index:2;display:flex;align-items:center;justify-content:center;color:rgba(153,27,27,.62);font:500 clamp(17px,3.4vw,27px)/1 Inter,system-ui,sans-serif;text-shadow:0 1px 0 rgba(0,0,0,.28);pointer-events:none}
+.no-select{user-select:none}
+.progress-bar-transition{transition:width 0.5s cubic-bezier(0.4,0,0.2,1)}
+@keyframes spin{to{transform:rotate(360deg)}}
+.tab-btn{flex:1;text-align:center;padding:8px 12px;font-size:13px;font-weight:600;border-radius:10px;cursor:pointer;color:#6B7280;transition:all 0.2s}
+.tab-btn.active{background:rgba(255,255,255,0.08);color:#E5E7EB}
+.config-select{background:#0A0A0C;border:1px solid #222226;border-radius:6px;padding:4px 6px;color:#D1D5DB;font-size:12px}
+.log-line{font-size:10px;color:#6B7280;font-family:monospace;padding:1px 0;border-bottom:1px solid rgba(255,255,255,0.03)}
+.analysis-table{display:grid;grid-template-columns:34px 1fr 54px 54px 54px;gap:4px;align-items:center;font-size:11px}
+.analysis-row{padding:5px 4px;border-top:1px solid rgba(255,255,255,0.04)}
+.analysis-muted{color:#6B7280}
+.analysis-good{color:#38BDF8}
+.analysis-warn{color:#F59E0B}
+.chart-shell{height:126px;position:relative}
+.chart-shell canvas{width:100%;height:100%;display:block}
+.review-toolbar{background:linear-gradient(135deg,rgba(56,189,248,.08),rgba(245,158,11,.04));border:1px solid rgba(56,189,248,.14)}
+.review-step-button{width:34px;height:30px;border-radius:9px;background:#0A0A0C;border:1px solid #2b2b31;color:#cbd5e1;font-size:15px;transition:border-color .2s,color .2s,transform .15s}
+.review-step-button:hover:not(:disabled){border-color:#38BDF8;color:#fff;transform:translateY(-1px)}
+.review-step-button:disabled{opacity:.3;cursor:not-allowed}
+.review-range{accent-color:#38BDF8}
+.review-current-piece{box-shadow:0 0 0 2px rgba(255,255,255,.85),0 0 18px rgba(56,189,248,.5)}
+.move-quality-badge{position:absolute;right:-4px;top:-6px;z-index:8;min-width:19px;height:19px;padding:0 3px;border-radius:6px;display:flex;align-items:center;justify-content:center;font:900 11px/1 Inter,system-ui,sans-serif;color:#071014;border:1px solid rgba(255,255,255,.7);box-shadow:0 3px 10px rgba(0,0,0,.7)}
+.quality-best{background:#fbbf24}.quality-brilliant{background:#67e8f9}.quality-good{background:#4ade80}.quality-inaccuracy{background:#facc15}.quality-mistake{background:#fb923c}.quality-blunder{background:#f87171}.quality-catastrophe{background:#e879f9}
+.quality-pill{display:inline-flex;align-items:center;gap:7px;padding:5px 9px;border-radius:9px;font-weight:700;background:#0A0A0C;border:1px solid #29292f}
+.quality-symbol{width:22px;height:22px;border-radius:7px;display:inline-flex;align-items:center;justify-content:center;color:#071014;font-weight:900}
+.board-stage{display:grid;grid-template-columns:24px 10px 280px;column-gap:4px}
+.position-winrail{height:280px;width:24px;display:flex;flex-direction:column;align-items:center;gap:5px;padding:2px 0}
+.position-winrail-track{width:8px;min-height:0;flex:1;display:flex;flex-direction:column;overflow:hidden;border-radius:999px;background:#222226;box-shadow:inset 0 0 0 1px rgba(255,255,255,.05)}
+.position-winrail-segment{width:100%;transition:height .5s cubic-bezier(.4,0,.2,1)}
+.position-winrail-value{font-size:8px;line-height:1;color:#6B7280;font-variant-numeric:tabular-nums}
+.analysis-switch-track{width:30px;height:16px;padding:2px;border-radius:999px;background:#222226;transition:background .2s}
+.analysis-switch-knob{width:12px;height:12px;border-radius:999px;background:#6B7280;transition:transform .2s,background .2s}
+.switch-input:checked+.analysis-switch-track{background:rgba(56,189,248,.3)}
+.switch-input:checked+.analysis-switch-track .analysis-switch-knob{transform:translateX(14px);background:#38BDF8}
+.analysis-extras{display:grid;gap:12px}
+#analysis-panel.analysis-compact [data-analysis-detail]{display:none}
+#analysis-panel.analysis-compact #analysis-summary{grid-template-columns:minmax(0,1fr)}
+body.review-active #turn-card{border-color:rgba(56,189,248,.18)}
+/* Mobile app shell */
+:root{--app-blue:#38BDF8;--app-orange:#F59E0B;--app-ink:#080B10;--board-size:min(280px,calc(100vw - 80px))}
+html{background:var(--app-ink);overscroll-behavior-y:none}
+body{min-height:100dvh;background:radial-gradient(circle at 50% -14%,rgba(56,189,248,.09),transparent 36%),var(--app-ink);letter-spacing:0}
+button,select,input{font:inherit}
+button{-webkit-tap-highlight-color:transparent}
+.brand-lockup{display:flex;align-items:center;gap:10px;min-width:0}
+.app-icon{width:40px;height:40px;flex:none;border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.35)}
+.header-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;min-width:0}
+.status-chip{display:inline-flex;align-items:center;gap:6px;min-height:28px;padding:0 9px;border:1px solid rgba(255,255,255,.07);border-radius:999px;background:rgba(10,15,22,.75);color:#7d8b9e;font-size:10px;white-space:nowrap}
+.status-dot{width:6px;height:6px;border-radius:999px;background:#6b7280;box-shadow:0 0 0 3px rgba(107,114,128,.12)}
+.status-chip.ready{color:#8dd8fa;border-color:rgba(56,189,248,.2)}
+.status-chip.ready .status-dot{background:var(--app-blue);box-shadow:0 0 0 3px rgba(56,189,248,.14)}
+.status-chip.error{color:#f6b87a;border-color:rgba(245,158,11,.22)}
+.status-chip.error .status-dot{background:var(--app-orange);box-shadow:0 0 0 3px rgba(245,158,11,.14)}
+.install-button{display:inline-flex;align-items:center;gap:6px;min-height:30px;padding:0 10px;border:1px solid rgba(56,189,248,.32);border-radius:10px;background:rgba(56,189,248,.1);color:#a9e7ff;font-size:10px;font-weight:700;white-space:nowrap;cursor:pointer}
+.install-button:hover{background:rgba(56,189,248,.18);color:#fff}
+.install-button[hidden]{display:none}
+.board-shell{width:max-content;max-width:100%;}
+.board-stage{grid-template-columns:17px 7px var(--board-size);column-gap:3px;grid-template-rows:15px var(--board-size)}
+.position-winrail{height:var(--board-size);width:17px;gap:4px;padding:2px 0}
+.position-winrail-track{width:7px}
+.position-winrail-value{font-size:8px}
+.board-coordinates-x{width:var(--board-size)!important;grid-column:3;grid-row:1;margin-bottom:0!important}
+.board-coordinates-y{height:var(--board-size)!important;width:10px!important;grid-column:2;grid-row:2}
+#position-winrail{grid-column:1;grid-row:2}
+#board{grid-column:3;grid-row:2;width:var(--board-size)!important;height:var(--board-size)!important;touch-action:manipulation;-webkit-tap-highlight-color:transparent;box-shadow:0 14px 34px rgba(0,0,0,.32)}
+#board>div{min-width:0;min-height:0;aspect-ratio:1}
+.forbidden-pattern::after{font-size:clamp(8px,3.1vw,16px)}
+.piece-shadow{box-shadow:0 2px 7px rgba(0,0,0,.65),inset 0 1px 2px rgba(255,255,255,.28)}
+.glass-panel{box-shadow:0 8px 28px rgba(0,0,0,.18)}
+.game-actions button{min-height:40px;font-weight:700;transition:transform .15s,border-color .2s,background .2s}
+.game-actions button:active{transform:scale(.97)}
+#analysis-panel{scrollbar-width:thin;scrollbar-color:#304254 transparent}
+@media(max-width:639px){
+  body{padding:10px 12px calc(14px + env(safe-area-inset-bottom))!important;overflow-x:hidden}
+  header{align-items:stretch!important;gap:10px!important;margin:0 0 10px!important}
+  .brand-lockup{justify-content:flex-start}
+  .brand-lockup h1{font-size:21px;letter-spacing:.04em}
+  .brand-lockup p{font-size:9px;letter-spacing:.14em}
+  .header-actions{justify-content:stretch;flex-wrap:wrap}
+  .header-actions .status-chip{order:1}
+  .header-actions .install-button{order:2;margin-left:auto}
+  #score-display{order:3;width:100%;justify-content:space-between;gap:8px;padding:9px 12px!important;border-radius:16px}
+  #score-display .w-32{width:min(34vw,128px)}
+  #score-display .text-3xl{font-size:27px;line-height:1}
+  #workspace-tabs{margin-bottom:10px!important}
+  #workspace-tabs>div{max-width:none!important}
+  .tab-btn{min-height:34px;display:flex;align-items:center;justify-content:center}
+  main{gap:12px!important;align-items:stretch!important}
+  .board-shell{padding:10px!important;border-radius:20px!important}
+  .side-column{max-width:none!important}
+  .play-stack{gap:10px!important}
+  .match-card{grid-template-columns:minmax(0,1fr) minmax(0,1.3fr)!important;padding:11px!important}
+  .compact-card{padding:11px!important}
+  .turn-card{padding:12px!important}
+  .game-actions{display:grid!important;grid-template-columns:repeat(5,minmax(0,1fr));gap:5px!important;position:sticky;bottom:calc(7px + env(safe-area-inset-bottom));z-index:15;padding:7px;border:1px solid rgba(255,255,255,.08);border-radius:15px;background:rgba(12,16,22,.94);backdrop-filter:blur(14px);box-shadow:0 10px 30px rgba(0,0,0,.35)}
+  .game-actions button{min-width:0;padding:0 2px!important;font-size:10px!important;border-radius:10px!important;line-height:1.1}
+  #analysis-panel{border-radius:16px!important}
+  .analysis-table{grid-template-columns:22px 1fr 44px 46px 44px;font-size:10px}
+  .analysis-extras{gap:10px}
+  .chart-shell{height:110px}
+  .rules-card{padding:12px!important}
+}
+@media(max-width:340px){
+  :root{--board-size:min(240px,calc(100vw - 80px))}
+  .app-icon{width:36px;height:36px}
+  .status-chip{font-size:9px}
+  .game-actions button{font-size:9px!important}
+}
+@media(min-width:640px){.board-stage{grid-template-columns:36px 14px var(--board-size,500px);column-gap:10px}.position-winrail{height:var(--board-size,500px);width:36px;gap:8px;padding:4px 0}.position-winrail-track{width:10px}.position-winrail-value{font-size:10px}#board{width:var(--board-size,500px)!important;height:var(--board-size,500px)!important}.board-coordinates-x{width:var(--board-size,500px)!important}.board-coordinates-y{height:var(--board-size,500px)!important}}
+@media(min-width:1024px){:root{--board-size:min(600px,calc(100vh - 190px),calc(100vw - 580px));--workspace-height:calc(var(--board-size) + 50px)}@supports(height:100dvh){:root{--board-size:min(600px,calc(100dvh - 190px),calc(100vw - 580px))}}html{height:100%}body{height:100vh;overflow:hidden;padding:10px 16px!important}@supports(height:100dvh){body{height:100dvh}}header{max-width:1240px!important;margin:0 0 8px!important;height:48px;flex:none}#workspace-tabs{max-width:1240px!important;margin-bottom:8px!important;flex:none}main{max-width:1240px!important;height:var(--workspace-height);min-height:0;display:grid!important;grid-template-columns:auto minmax(390px,500px);align-items:stretch!important;gap:18px!important;flex:none}.board-shell{box-sizing:border-box;height:var(--workspace-height);padding:14px!important;align-self:stretch;overflow:hidden;border-radius:24px}.side-column{max-width:none!important;height:var(--workspace-height);min-height:0;overflow:visible}.play-stack{height:100%;min-height:0;display:grid!important;grid-template-columns:1fr 1fr;grid-template-rows:auto auto auto minmax(0,1fr);grid-auto-rows:min-content;gap:8px!important}.play-stack>.match-card,.play-stack>.game-actions,.play-stack>#analysis-panel,.play-stack>#review-controls{grid-column:1/-1}.play-stack>#analysis-panel{min-height:0;max-height:100%;overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable;border-radius:16px}.play-stack>.rules-card{display:none}.play-stack>#turn-card{padding:10px 12px}.play-stack>.compact-card{padding:9px 11px}#analysis-panel{padding:11px!important}#analysis-panel>*+*{margin-top:7px!important}.analysis-extras{grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:8px}.chart-shell{height:92px}body.review-active .play-stack{grid-template-rows:auto minmax(0,1fr)}body.review-active .play-stack>.match-card,body.review-active .play-stack>.compact-card,body.review-active .play-stack>.game-actions,body.review-active .play-stack>#turn-card{display:none!important}footer{display:none}}
+@media(min-width:1024px) and (max-height:820px){.chart-shell{height:72px}.analysis-row{padding:3px 4px}#analysis-panel{padding:10px!important}#analysis-panel>*+*{margin-top:6px!important}}
+</style>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800;900&display=swap" rel="stylesheet">
+</head>
+<body class="text-slate-200 min-h-screen flex flex-col items-center p-3 sm:p-5 no-select font-sans font-light">
+<header class="w-full max-w-6xl flex flex-col md:flex-row items-center justify-between gap-4 mb-4 mt-1 sm:mt-4">
+    <div class="brand-lockup">
+        <img class="app-icon" src="icons/hexadeca-icon.svg" alt="Hexadeca app icon">
+        <div class="text-left min-w-0">
+            <h1 class="text-2xl font-black tracking-tighter text-white">HEXADECA</h1>
+            <p class="text-[10px] text-slate-500 mt-0.5 uppercase tracking-widest font-medium">Discrete Voronoi · 4520</p>
+        </div>
+    </div>
+    <div class="header-actions">
+        <div id="connection-status" class="status-chip" role="status" aria-live="polite"><span class="status-dot"></span><span id="connection-label">Connecting</span></div>
+        <button id="install-button" class="install-button" type="button" hidden title="Install Hexadeca on this device"><span aria-hidden="true">＋</span><span>Install app</span></button>
+        <div id="score-display" class="flex items-center gap-5 glass-panel px-5 py-2.5 rounded-2xl w-full md:w-auto shadow-inner">
+            <div class="flex items-end gap-1.5"><span class="text-[10px] text-slate-500 font-medium mb-0.5">P1 · Blue</span><span id="black-score" class="text-3xl font-extrabold text-player-1 tabular-nums">0</span></div>
+            <div class="w-32 sm:w-52 bg-matte-black h-1 rounded-full overflow-hidden flex relative">
+                <div id="bar-black" class="bg-player-1 h-full progress-bar-transition" style="width:50%"></div>
+                <div id="bar-white" class="bg-player-2 h-full progress-bar-transition" style="width:50%"></div>
+                <div class="absolute inset-y-0 left-1/2 w-px bg-slate-bg"></div>
+            </div>
+            <div class="flex items-end gap-1.5"><span id="white-score" class="text-3xl font-extrabold text-player-2 tabular-nums">0</span><span class="text-[10px] text-slate-500 font-medium mb-0.5">P2 · Orange</span></div>
+        </div>
+    </div>
+</header>
+<div id="workspace-tabs" class="w-full max-w-6xl mb-3">
+    <div class="glass-panel p-1 rounded-xl flex max-w-[320px] mx-auto md:mx-0">
+        <div class="tab-btn active" data-tab="play" onclick="sm('play')">Play</div>
+        <div class="tab-btn" data-tab="review" onclick="sm('review')">Review</div>
+    </div>
+</div>
+<main class="flex flex-col lg:flex-row items-start justify-center gap-5 w-full max-w-6xl">
+    <div class="board-shell glass-panel p-3 sm:p-5 rounded-3xl shadow-2xl flex flex-col items-center mx-auto lg:mx-0">
+        <div class="board-stage">
+        <div aria-hidden="true"></div>
+        <div aria-hidden="true"></div>
+        <div class="board-coordinates-x grid grid-cols-16 gap-[1px] p-[1px] text-center text-[9px] sm:text-[11px] font-mono font-medium text-slate-500 mb-1.5 w-[280px] sm:w-[500px]">
+            <div>0</div><div>1</div><div>2</div><div>3</div><div>4</div><div>5</div><div>6</div><div>7</div>
+            <div>8</div><div>9</div><div>10</div><div>11</div><div>12</div><div>13</div><div>14</div><div>15</div>
+        </div>
+            <div id="position-winrail" class="position-winrail" aria-label="Predicted P1 minus P2 territory margin">
+                <span id="position-score-margin" class="position-winrail-value text-slate-400">0.0</span>
+                <div class="position-winrail-track">
+                    <div id="position-bar-black" class="position-winrail-segment bg-player-1" style="height:50%"></div>
+                    <div id="position-bar-white" class="position-winrail-segment bg-player-2" style="height:50%"></div>
+                </div>
+            </div>
+            <div class="board-coordinates-y grid grid-rows-16 gap-[1px] text-right text-[9px] sm:text-[11px] font-mono font-medium text-slate-500 h-[280px] sm:h-[500px] w-2.5 sm:w-3.5 items-center">
+                <div>0</div><div>1</div><div>2</div><div>3</div><div>4</div><div>5</div><div>6</div><div>7</div>
+                <div>8</div><div>9</div><div>10</div><div>11</div><div>12</div><div>13</div><div>14</div><div>15</div>
+            </div>
+            <div id="board" class="grid grid-cols-16 grid-rows-16 gap-[1px] bg-slate-line p-[1px] rounded-2xl overflow-hidden w-[280px] h-[280px] sm:w-[500px] sm:h-[500px]"></div>
+        </div>
+    </div>
+    <div class="side-column w-full max-w-[320px] flex flex-col gap-3 lg:self-start lg:mt-0 mx-auto lg:mx-0">
+        <div id="play-content" class="play-stack flex flex-col gap-3">
+            <div class="match-card glass-panel p-3 rounded-2xl grid grid-cols-[auto_1fr] gap-x-3 gap-y-2 items-center text-xs">
+                <label for="p1-type" class="text-slate-500">P1 · Blue</label>
+                <select id="p1-type" class="config-select min-w-0" onchange="opt()">
+                    <option value="human" selected>Human</option>
+                </select>
+                <label for="p2-type" class="text-slate-500">P2 · Orange</label>
+                <select id="p2-type" class="config-select min-w-0" onchange="opt()">
+                    <option value="human">Human</option>
+                </select>
+                <label for="evaluation-model" class="text-slate-500">Evaluation · 4520</label>
+                <select id="evaluation-model" class="config-select min-w-0" onchange="evaluationModelChanged()">
+                    <option value="">Loading neural models…</option>
+                </select>
+            </div>
+            <div class="compact-card glass-panel p-3 rounded-2xl flex items-center gap-2 text-xs">
+                <span class="text-slate-500">AI Sims</span>
+                <label for="move-simulations" class="sr-only">Move search simulations</label>
+                <input id="move-simulations" type="range" min="200" max="3200" step="200" value="1600" class="flex-1 accent-player-1 cursor-pointer" oninput="setMoveSimulations(this.value)">
+                <output id="sim-label" for="move-simulations" class="text-slate-300 w-12 text-right text-xs tabular-nums">1600</output>
+            </div>
+            <div class="compact-card glass-panel p-3 rounded-2xl flex items-center justify-between text-xs">
+                <div><div class="text-slate-300 font-medium">Blind mode</div><div class="text-[10px] text-slate-600">Hide territory and evaluation</div></div>
+                <label class="cursor-pointer" title="Play without territory, score, win rate, or move hints">
+                    <input id="blind-mode-toggle" type="checkbox" class="sr-only switch-input" onchange="setBlindMode(this.checked)">
+                    <span class="analysis-switch-track block"><span class="analysis-switch-knob block"></span></span>
+                </label>
+            </div>
+            <div id="turn-card" class="glass-panel p-4 rounded-2xl flex items-center justify-between">
+                <span class="text-sm text-slate-400">Next Action</span>
+                <div class="flex items-center gap-2"><span id="turn-text" class="text-base font-bold text-player-1">Player 1</span><div id="turn-indicator" class="w-2.5 h-2.5 rounded-full bg-player-1 piece-shadow"></div></div>
+            </div>
+            <div class="game-actions flex gap-2">
+                <button id="btn-undo" class="flex-1 bg-slate-bg text-slate-300 text-sm py-2.5 rounded-xl border border-slate-line cursor-pointer">Undo</button>
+                <button id="btn-pause-ai" class="flex-1 bg-slate-bg text-slate-300 text-sm py-2.5 rounded-xl border border-slate-line cursor-pointer" onclick="toggleAiPause()" title="Pause before the next AI move">Pause AI</button>
+                <button id="btn-save-game" class="flex-1 bg-slate-bg text-slate-300 text-sm py-2.5 rounded-xl border border-slate-line cursor-pointer" title="Download game record" disabled>Download</button>
+                <button id="btn-load-game" class="flex-1 bg-slate-bg text-slate-300 text-sm py-2.5 rounded-xl border border-slate-line cursor-pointer" title="Load game record">Load</button>
+                <button id="btn-reset" class="flex-1 bg-slate-800 text-white text-sm py-2.5 rounded-xl cursor-pointer">Reset</button>
+            </div>
+            <input id="game-file-input" type="file" accept="application/json,.json" class="hidden" aria-label="Load a Hexadeca game record">
+            <div id="review-controls" class="hidden review-toolbar rounded-2xl p-3 text-xs space-y-2">
+                <div class="flex items-center justify-between gap-3">
+                    <div><div class="text-slate-200 font-semibold">Game review</div><div id="review-step-label" class="text-[10px] text-slate-500 tabular-nums">Final position</div></div>
+                    <div class="flex items-center gap-3">
+                        <label class="flex items-center gap-2 cursor-pointer" title="Hide or reveal territory and review analysis">
+                            <span class="text-[10px] text-slate-400">Blind</span>
+                            <input id="review-blind-mode-toggle" type="checkbox" class="sr-only switch-input" onchange="setBlindMode(this.checked)">
+                            <span class="analysis-switch-track"><span class="analysis-switch-knob block"></span></span>
+                        </label>
+                        <label class="flex items-center gap-2 cursor-pointer" title="Grade the move currently shown on the board">
+                            <span class="text-[10px] text-slate-400">Move grading</span>
+                            <input id="review-evaluation-toggle" type="checkbox" class="sr-only switch-input" onchange="setReviewEvaluation(this.checked)">
+                            <span class="analysis-switch-track"><span class="analysis-switch-knob block"></span></span>
+                        </label>
+                        <button id="review-load-game" class="rounded-xl border border-slate-line bg-slate-bg px-3 py-2 text-[11px] font-semibold text-slate-300 transition hover:border-sky-300 hover:text-white" onclick="id('game-file-input').click()" title="Load game record">Load</button>
+                        <button id="review-save-game" class="rounded-xl border border-slate-line bg-slate-bg px-3 py-2 text-[11px] font-semibold text-slate-300 transition hover:border-sky-300 hover:text-white" onclick="saveGameRecord()" title="Download game record" disabled>Download</button>
+                        <button id="review-return-play" class="rounded-xl border border-sky-400/30 bg-sky-400/10 px-3 py-2 text-[11px] font-semibold text-sky-300 transition hover:border-sky-300 hover:bg-sky-400/20 hover:text-white" onclick="returnToPlay()" title="Leave review and start a new game">Return to Play</button>
+                    </div>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button id="review-first" class="review-step-button" onclick="reviewTo(0)" aria-label="First position">↤</button>
+                    <button id="review-prev" class="review-step-button" onclick="reviewBy(-1)" aria-label="Previous move">‹</button>
+                    <input id="review-range" type="range" min="0" max="0" value="0" class="review-range flex-1 min-w-0" oninput="reviewTo(this.value)">
+                    <button id="review-next" class="review-step-button" onclick="reviewBy(1)" aria-label="Next move">›</button>
+                    <button id="review-last" class="review-step-button" onclick="reviewTo(hs.length)" aria-label="Final position">↦</button>
+                </div>
+                <div id="review-batch-progress" class="hidden rounded-xl border border-white/5 bg-black/20 px-3 py-2">
+                    <div class="mb-1.5 flex items-center justify-between gap-3 text-[10px]"><span id="review-batch-label" class="text-slate-400">Ready to analyze full game</span><span id="review-batch-count" class="tabular-nums text-sky-300">0 / 0</span></div>
+                    <div class="h-1 overflow-hidden rounded-full bg-slate-line"><div id="review-batch-fill" class="h-full rounded-full bg-player-1 transition-all duration-300" style="width:0%"></div></div>
+                </div>
+                <div id="review-grade" class="hidden items-center justify-between gap-2 bg-matte-black rounded-xl px-3 py-2">
+                    <span id="review-grade-pill" class="quality-pill"><span id="review-grade-symbol" class="quality-symbol quality-good">✓</span><span id="review-grade-name">Good</span></span>
+                    <span id="review-grade-loss" class="text-[10px] text-slate-500 tabular-nums">0.0 pp</span>
+                </div>
+            </div>
+            <div id="analysis-panel" class="glass-panel p-4 rounded-2xl text-xs space-y-3 analysis-compact">
+                <div class="flex items-center justify-between">
+                    <h3 class="text-sm font-semibold text-slate-200">Analysis</h3>
+                    <div class="flex items-center gap-3">
+                        <span id="analysis-status" class="text-[10px] text-slate-500">Waiting</span>
+                        <label class="flex items-center gap-1.5 cursor-pointer text-[10px] text-slate-500">
+                            <span>Details</span>
+                            <input id="analysis-detail-toggle" type="checkbox" class="sr-only switch-input" onchange="setAnalysisDetails(this.checked)">
+                            <span class="analysis-switch-track"><span class="analysis-switch-knob block"></span></span>
+                        </label>
+                    </div>
+                </div>
+                <div id="analysis-summary" class="grid grid-cols-3 gap-2 text-center">
+                    <div data-analysis-detail class="bg-matte-black rounded-lg py-2"><div class="text-[10px] text-slate-500">To play</div><div id="analysis-to-play" class="text-sm font-semibold text-slate-200">-</div></div>
+                    <div class="bg-matte-black rounded-lg py-2"><div id="analysis-win-label" class="text-[10px] text-slate-500">Win rate</div><div id="analysis-win" class="text-lg font-semibold text-player-1">-</div></div>
+                    <div data-analysis-detail class="bg-matte-black rounded-lg py-2"><div class="text-[10px] text-slate-500">Search</div><div id="analysis-sims" class="text-sm font-semibold text-slate-200">-</div></div>
+                </div>
+                <div id="winrate-timeline">
+                    <div class="flex items-center justify-between mb-1"><span class="text-slate-400 font-semibold">Win-rate history</span><span><span id="analysis-black-win" class="text-[10px] text-slate-500">Blue -</span><span id="review-chart-step" class="hidden ml-2 text-[10px] text-player-1">Current: final</span></span></div>
+                    <div class="chart-shell"><canvas id="winrate-chart" aria-label="Historical blue win-rate chart"></canvas></div>
+                </div>
+                <div data-analysis-detail class="analysis-extras">
+                    <div>
+                        <div class="flex items-center justify-between mb-1"><span class="text-slate-400 font-semibold">Top 5 moves</span><span class="analysis-muted">visits / win</span></div>
+                        <div class="analysis-table text-slate-500"><span>#</span><span>Point</span><span>Visits</span><span>Win</span><span>Prior</span></div>
+                        <div id="analysis-candidates"><div class="analysis-muted py-2">No analysis yet</div></div>
+                    </div>
+                    <div class="space-y-2 min-w-0">
+                        <div>
+                            <div class="text-slate-400 font-semibold mb-1">Future branch</div>
+                            <div id="analysis-branch" class="flex flex-wrap gap-1"><span class="analysis-muted">-</span></div>
+                        </div>
+                        <div class="bg-matte-black rounded-lg p-2"><div class="text-[10px] text-slate-500 mb-1">Previous move</div><div id="analysis-previous" class="text-slate-300">No move evaluated</div></div>
+                    </div>
+                </div>
+            </div>
+            <div class="rules-card glass-panel p-4 rounded-2xl text-xs text-slate-500 space-y-2">
+                <h3 class="text-sm font-semibold text-slate-200 mb-1">Rules</h3>
+                <p><strong>01.</strong> Piece blocks itself + 8 neighbors.</p>
+                <p><strong>02.</strong> Real-time Voronoi territory display.</p>
+                <p><strong>03.</strong> No moves left = game over. Most cells wins.</p>
+            </div>
+        </div>
+    </div>
+</main>
+<footer class="text-[9px] text-slate-700 mt-6 mb-3 font-mono tracking-widest uppercase">Alpha Hexadeca v2.0</footer>
+<script>
+const BS=16,DEFAULT_MODEL_ID="iteration-004520";let b=Array(BS).fill().map(function(){return Array(BS).fill(0)}),ct=1,hs=[],md="play",bl=false,ia=false,al=false,aiPaused=false,aiMoveSerial=0,ws=null,lastSequence=0,watchedGameIndex=null,wsPath="",wsDelay=0,wsBaseDelay=0,wsMaxDelay=0,statusRefreshIntervalMs=0,statusRefreshHandle=null,runtimeState="idle",lastAnalysis=null,pendingMove=null,analysisHistory=[],positionAnalyses={},analysisRequestSerial=0,analysisPending=false,analysisQueued=false,analysisDetailsVisible=false,blindMode=false,moveSimulations=1600,moveSimulationsConfig={minimum:200,maximum:3200,step:200,default:1600},participantsLoaded=false,reviewMode=false,reviewPly=0,reviewFinalBoard=null,reviewFinalTurn=1,reviewEvaluationEnabled=false,reviewAnalysisSerial=0,reviewGrades={},reviewBatchRunning=false,reviewBatchCompleted=0,reviewBatchTotal=0,reviewBatchModel="",moveAudioContext=null,moveNoiseBuffer=null,deferredInstallPrompt=null;
+let pb=Array(BS).fill().map(function(){return Array(BS).fill(0)}),pct=1,phs=[],pia=false,pal=false;
+let tb=Array(BS).fill().map(function(){return Array(BS).fill(0)}),tct=1;
+const be=document.getElementById("board");
+function id(x){return document.getElementById(x)}
+function apiUrl(path){return new URL(path.replace(/^\//,""),window.location.href).toString()}
+function playMoveSound(player){try{var AudioContextClass=window.AudioContext||window.webkitAudioContext;if(!AudioContextClass)return;if(!moveAudioContext||moveAudioContext.state==="closed")moveAudioContext=new AudioContextClass();var context=moveAudioContext;if(context.state==="suspended")context.resume().catch(function(){});if(!moveNoiseBuffer){var length=Math.floor(context.sampleRate*0.06);moveNoiseBuffer=context.createBuffer(1,length,context.sampleRate);var samples=moveNoiseBuffer.getChannelData(0);for(var i=0;i<length;i++)samples[i]=(Math.random()*2-1)*(1-i/length)}var now=context.currentTime,body=context.createOscillator(),bodyGain=context.createGain(),contact=context.createBufferSource(),contactFilter=context.createBiquadFilter(),contactGain=context.createGain(),resonance=context.createOscillator(),resonanceGain=context.createGain(),spark=context.createOscillator(),sparkGain=context.createGain(),master=context.createGain();master.gain.setValueAtTime(0.62,now);master.connect(context.destination);body.type="sine";body.frequency.setValueAtTime(player===1?156:150,now);body.frequency.exponentialRampToValueAtTime(88,now+0.12);bodyGain.gain.setValueAtTime(0.0001,now);bodyGain.gain.exponentialRampToValueAtTime(0.055,now+0.002);bodyGain.gain.exponentialRampToValueAtTime(0.0001,now+0.125);body.connect(bodyGain);bodyGain.connect(master);contact.buffer=moveNoiseBuffer;contactFilter.type="bandpass";contactFilter.frequency.setValueAtTime(4700,now);contactFilter.Q.setValueAtTime(1.15,now);contactGain.gain.setValueAtTime(0.0001,now);contactGain.gain.exponentialRampToValueAtTime(0.3,now+0.001);contactGain.gain.exponentialRampToValueAtTime(0.0001,now+0.048);contact.connect(contactFilter);contactFilter.connect(contactGain);contactGain.connect(master);resonance.type="triangle";resonance.frequency.setValueAtTime(player===1?1850:1780,now);resonance.frequency.exponentialRampToValueAtTime(760,now+0.045);resonanceGain.gain.setValueAtTime(0.0001,now);resonanceGain.gain.exponentialRampToValueAtTime(0.055,now+0.001);resonanceGain.gain.exponentialRampToValueAtTime(0.0001,now+0.055);resonance.connect(resonanceGain);resonanceGain.connect(master);spark.type="sine";spark.frequency.setValueAtTime(player===1?3300:3150,now);spark.frequency.exponentialRampToValueAtTime(1900,now+0.035);sparkGain.gain.setValueAtTime(0.0001,now);sparkGain.gain.exponentialRampToValueAtTime(0.045,now+0.001);sparkGain.gain.exponentialRampToValueAtTime(0.0001,now+0.04);spark.connect(sparkGain);sparkGain.connect(master);body.start(now);contact.start(now);resonance.start(now);spark.start(now);body.stop(now+0.13);contact.stop(now+0.055);resonance.stop(now+0.06);spark.stop(now+0.045)}catch(error){moveAudioContext=null;moveNoiseBuffer=null}}
+function idom(){be.innerHTML="";for(var r=0;r<BS;r++)for(var c=0;c<BS;c++){var e=document.createElement("div");e.dataset.row=r;e.dataset.col=c;e.className="relative bg-slate-bg flex items-center justify-center cursor-pointer";e.onclick=function(){hc(this.dataset.row,this.dataset.col)};e.onmouseenter=function(){hme(this.dataset.row,this.dataset.col)};e.onmouseleave=function(){hml()};be.appendChild(e)}}
+function iv(r,c){if(b[r][c]!==0)return false;for(var d=-1;d<=1;d++)for(var e=-1;e<=1;e++){var n=+r+d,m=+c+e;if(n>=0&&n<BS&&m>=0&&m<BS&&(b[n][m]===1||b[n][m]===2))return false}return true}
+function hv(){for(var r=0;r<BS;r++)for(var c=0;c<BS;c++)if(iv(r,c))return true;return false}
+function cv(){var bs=0,ws=0,ow=Array(BS).fill().map(function(){return Array(BS).fill(0)}),ps=[];for(var r=0;r<BS;r++)for(var c=0;c<BS;c++){if(b[r][c]===1||b[r][c]===2)ps.push({r:r,c:c,t:b[r][c]})}if(ps.length===0)return{bs:0,ws:0,ow:ow};for(var r=0;r<BS;r++)for(var c=0;c<BS;c++){var dg={};for(var p=0;p<ps.length;p++){var d2=(r-ps[p].r)*(r-ps[p].r)+(c-ps[p].c)*(c-ps[p].c);if(!dg[d2])dg[d2]=[];dg[d2].push(ps[p].t)}var sd=Object.keys(dg).map(Number).sort(function(a,b){return a-b});var co=0;for(var i=0;i<sd.length;i++){var bc=0,wc=0;for(var j=0;j<dg[sd[i]].length;j++){if(dg[sd[i]][j]===1)bc++;if(dg[sd[i]][j]===2)wc++}if(bc>wc){co=1;break}if(wc>bc){co=2;break}}if(co===1)bs++;if(co===2)ws++;ow[r][c]=co}return{bs:bs,ws:ws,ow:ow}}
+function rn(hr,hc){if(hr===void 0)hr=-1;if(hc===void 0)hc=-1;var s=cv();id("black-score").innerText=s.bs;id("white-score").innerText=s.ws;var t=s.bs+s.ws;id("bar-black").style.width=t>0?(s.bs/t*100)+"%":"50%";id("bar-white").style.width=t>0?(s.ws/t*100)+"%":"50%";var tt=id("turn-text");if(reviewMode){tt.innerText=reviewPly===0?"Opening":"Move "+reviewPly;tt.className="text-base font-bold text-player-1"}else if(aiPaused&&!isHuman(gpt(ct))){tt.innerText="AI Paused";tt.className="text-base font-bold text-amber-400"}else if(ia){tt.innerText="Thinking..";tt.className="text-base text-slate-400"}else if(ct===1){tt.innerText="P1";tt.className="text-base font-bold text-player-1"}else{tt.innerText="P2";tt.className="text-base font-bold text-player-2"};for(var i=0;i<be.children.length;i++){var e=be.children[i],r=parseInt(e.dataset.row),c=parseInt(e.dataset.col);e.innerHTML="";e.className="relative bg-slate-bg flex items-center justify-center"+(bl?" cursor-default":" cursor-pointer");if(!blindMode&&b[r][c]===0){if(s.ow[r][c]===1)e.classList.add("bg-[#0E1B21]");else if(s.ow[r][c]===2)e.classList.add("bg-[#21190E]");else e.classList.add("bg-slate-bg")}else e.classList.add("bg-slate-bg");var fb=false;if(b[r][c]===0){for(var d=-1;d<=1;d++)for(var e2=-1;e2<=1;e2++){var n=r+d,m=c+e2;if(n>=0&&n<BS&&m>=0&&m<BS&&(b[n][m]===1||b[n][m]===2))fb=true}}if(fb&&!blindMode)e.classList.add("forbidden-pattern");if(b[r][c]===1)e.innerHTML="<div class='w-[70%] h-[70%] rounded-full bg-player-1 piece-shadow'></div>";else if(b[r][c]===2)e.innerHTML="<div class='w-[70%] h-[70%] rounded-full bg-player-2 piece-shadow'></div>";if(!blindMode&&hr>=0&&hc>=0&&iv(hr,hc)){if(r===hr&&c===hc)e.innerHTML="<div class='w-[70%] h-[70%] rounded-full bg-"+(ct===1?"player-1":"player-2")+"/30 piece-shadow'></div>";if(Math.abs(r-hr)<=1&&Math.abs(c-hc)<=1&&!(r===hr&&c===hc))e.classList.add("border-red-900/50")}}renderReviewMarker();renderBoardRecommendations()}
+function opt(){persistPlaySelections();if(bl||!participantsLoaded)return;if(!isHuman(gpt(ct))){al=true;if(aiPaused){rn();return}if(analysisPending)analysisQueued=true;else cat()}else{al=false;requestAnalysis()}updateAiPauseButton()}
+function gpt(p){return p===1?id("p1-type").value:id("p2-type").value}
+function isHuman(agent){return agent==="human"}
+function cat(){if(bl||ia||analysisPending||aiPaused||md!=="play")return;var p=gpt(ct);if(isHuman(p))return;var serial=++aiMoveSerial;ia=true;al=true;rn();fetch(apiUrl("/api/play/move"),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({board:b,currentPlayer:ct,history:gameActions(),simulations:moveSimulations,agent:p})}).then(function(r){return r.json().then(function(data){if(!r.ok)throw Error(data.detail||"AI move unavailable");return data})}).then(function(d){if(serial!==aiMoveSerial||!al||aiPaused){ia=false;rn();return}var action=d.action,moveAnalysis=d.analysis||lastAnalysis;finalizePreviousMove(moveAnalysis);recordAnalysis(moveAnalysis,hs.length);beginPreviousMove(action,ct,moveAnalysis);hs.push({board:b.map(function(rr){return[...rr]}),currentTurn:ct,action:action});b[d.row][d.column]=ct;playMoveSound(ct);ct=3-ct;ia=false;lastAnalysis=null;renderAnalysis(null);id("sim-label").innerText=d.simulations||moveSimulations;rn();if(!hv()){al=false;setTimeout(tgo,400)}else{var n=gpt(ct);if(!isHuman(n)&&al&&!aiPaused)setTimeout(function(){cat()},100);else{al=false;if(!aiPaused)requestAnalysis()}}}).catch(function(error){if(serial!==aiMoveSerial)return;ia=false;al=false;appendLog(error.message||"AI move unavailable");rn();if(!aiPaused)requestAnalysis()})}
+function hc(r,c){if(bl||ia||analysisPending||md!=="play")return;if(!isHuman(gpt(ct)))return;if(!iv(r,c))return;var player=ct,action=+r*BS+ +c;beginPreviousMove(action,player,lastAnalysis);hs.push({board:b.map(function(rr){return[...rr]}),currentTurn:ct,action:action});b[r][c]=ct;playMoveSound(player);ct=3-ct;lastAnalysis=null;renderAnalysis(null);rn();if(!hv())setTimeout(tgo,400);else if(!isHuman(gpt(ct)))setTimeout(function(){cat()},50);else requestAnalysis()}
+function hme(r,c){if(!bl&&md==="play")rn(+r,+c)}
+function hml(){rn()}
+document.getElementById("btn-undo").onclick=function(){if(reviewMode||bl||ia||analysisPending||!hs.length)return;var p=hs.pop();b=p.board;ct=p.currentTurn;setTerminalDownloadState(false);lastAnalysis=null;pendingMove=null;analysisHistory=analysisHistory.filter(function(item){return item.ply<=hs.length});Object.keys(positionAnalyses).forEach(function(key){if(+key>hs.length)delete positionAnalyses[key]});id("analysis-previous").innerText="Previous move undone";renderAnalysis(null);rn();requestAnalysis()};
+function updateAiPauseButton(){var button=id("btn-pause-ai");if(!button)return;button.innerText=aiPaused?"Resume AI":"Pause AI";button.className="flex-1 text-sm py-2.5 rounded-xl border cursor-pointer transition "+(aiPaused?"bg-amber-400/10 text-amber-300 border-amber-400/40":"bg-slate-bg text-slate-300 border-slate-line")}
+function toggleAiPause(){aiPaused=!aiPaused;if(aiPaused){al=false;aiMoveSerial++;ia=false;analysisRequestSerial++;analysisQueued=false;setMetric("analysis-status","AI paused")}else{al=true;if(!isHuman(gpt(ct)))setTimeout(cat,50);else requestAnalysis()}updateAiPauseButton();rn()}
+function rg(){al=false;aiPaused=false;aiMoveSerial++;analysisRequestSerial++;reviewAnalysisSerial++;analysisQueued=analysisPending;updateAiPauseButton();exitReviewMode();setTimeout(function(){b=Array(BS).fill().map(function(){return Array(BS).fill(0)});ct=1;hs=[];lastAnalysis=null;pendingMove=null;analysisHistory=[];positionAnalyses={};reviewGrades={};reviewBatchRunning=false;reviewBatchCompleted=0;reviewBatchTotal=0;reviewBatchModel="";setTerminalDownloadState(false);id("analysis-previous").innerText="No move evaluated";renderPositionScoreMargin(0,128,128);renderAnalysis(null);rn();if(!ia&&!analysisPending){if(!isHuman(gpt(ct)))setTimeout(function(){cat()},50);else requestAnalysis()}},50)}
+document.getElementById("btn-reset").onclick=rg;
+document.getElementById("btn-save-game").onclick=saveGameRecord;
+document.getElementById("btn-load-game").onclick=function(){id("game-file-input").click()};
+document.getElementById("game-file-input").onchange=function(){var file=this.files&&this.files[0];this.value="";if(file)loadGameFile(file)};
+function tgo(){var s=cv(),blueWin=s.bs>s.ws?1:s.bs<s.ws?0:.5,currentWin=ct===1?blueWin:1-blueWin,terminalAnalysis={current_player:ct,simulations:0,win_probability:currentWin,blue_win_probability:blueWin,black_win_probability:blueWin,predicted_blue_score:s.bs,predicted_orange_score:s.ws,predicted_black_score:s.bs,predicted_white_score:s.ws,predicted_score_margin:s.bs-s.ws,candidates:[],principal_variation:[],elapsed_seconds:0,model_identifier:"official-result"};setTerminalDownloadState(true);finalizePreviousMove(terminalAnalysis);recordAnalysis(terminalAnalysis,hs.length);renderPositionScoreMargin(s.bs-s.ws,s.bs,s.ws);drawWinrate();setMetric("analysis-status","Final");setMetric("analysis-black-win","Blue "+(blueWin*100).toFixed(1)+"%");setMetric("analysis-win-label",ct===1?"P1 win rate":"P2 win rate");setMetric("analysis-win",(currentWin*100).toFixed(1)+"%")}
+function sm(nm){if(nm==="review"){if(reviewMode){setWorkspaceTab("review");return}if(!hs.length){setMetric("analysis-status","Finish a game to review it");setWorkspaceTab("play");return}if(hv()){setMetric("analysis-status","Review opens after the game ends");setWorkspaceTab("play");return}enterReviewMode();setWorkspaceTab("review");return}if(nm==="play"){if(reviewMode)returnToPlay();else setWorkspaceTab("play")}}
+function setWorkspaceTab(name){md=name;document.querySelectorAll(".tab-btn").forEach(function(e){e.classList.toggle("active",e.dataset.tab===name)})}
+function setConnectionStatus(state,label){var chip=id("connection-status"),text=id("connection-label");if(chip)chip.className="status-chip "+(state||"");if(text)text.innerText=label||"Connecting"}
+function initMonitoring(){setConnectionStatus("","Connecting");Promise.all([fetch(apiUrl("/api/frontend-config")).then(function(r){if(!r.ok)throw Error("Monitoring configuration unavailable");return r.json()}),loadPlayParticipants()]).then(function(values){var d=values[0];wsPath=d.websocket_path;wsBaseDelay=d.reconnect_delay_seconds*1000;wsDelay=wsBaseDelay;wsMaxDelay=d.reconnect_max_delay_seconds*1000;if(d.interactive_move_simulations){moveSimulationsConfig=d.interactive_move_simulations;var slider=id("move-simulations");slider.min=moveSimulationsConfig.minimum;slider.max=moveSimulationsConfig.maximum;slider.step=moveSimulationsConfig.step;var saved=null;try{saved=parseInt(localStorage.getItem("hexadeca-move-simulations"),10)}catch(error){}setMoveSimulations(Number.isFinite(saved)?saved:moveSimulationsConfig.default)}connectMonitoring();if(!isHuman(gpt(ct)))cat();else requestAnalysis()}).catch(function(error){setConnectionStatus("error","Backend offline");setMetric("analysis-status",error.message||"Monitoring unavailable")})}
+function loadPlayParticipants(){return fetch(apiUrl("/api/play/participants")).then(function(r){if(!r.ok)throw Error("Play participants unavailable");return r.json()}).then(function(data){var defaults=data.defaults||{},savedBlue=null,savedOrange=null;try{savedBlue=localStorage.getItem("hexadeca-player-blue")||localStorage.getItem("hexadeca-player-black");savedOrange=localStorage.getItem("hexadeca-player-orange")||localStorage.getItem("hexadeca-player-white")}catch(error){}var players=data.players||[],evaluators=data.evaluation_models||[],fixedModel=evaluators.some(function(item){return item.id===DEFAULT_MODEL_ID})?DEFAULT_MODEL_ID:(defaults.evaluation||evaluators[0]&&evaluators[0].id||"");populateAgentSelect(id("p1-type"),players,savedBlue||defaults.blue||defaults.black||"human");populateAgentSelect(id("p2-type"),players,savedOrange||defaults.orange||defaults.white||"human");populateAgentSelect(id("evaluation-model"),evaluators,fixedModel);participantsLoaded=true;var evaluator=id("evaluation-model");if(evaluator&&fixedModel){evaluator.value=fixedModel;evaluator.disabled=true}setConnectionStatus("ready","4520 ready")})}
+function populateAgentSelect(select,items,selected){select.innerHTML="";(items||[]).forEach(function(item){var option=document.createElement("option");option.value=item.id;option.textContent=item.label;option.dataset.kind=item.kind;select.appendChild(option)});if(Array.from(select.options).some(function(option){return option.value===selected}))select.value=selected;else if(select.options.length)select.selectedIndex=0}
+function persistPlaySelections(){try{localStorage.setItem("hexadeca-player-blue",id("p1-type").value);localStorage.setItem("hexadeca-player-orange",id("p2-type").value);localStorage.setItem("hexadeca-player-black",id("p1-type").value);localStorage.setItem("hexadeca-player-white",id("p2-type").value)}catch(error){}}
+function evaluationModelChanged(){try{localStorage.setItem("hexadeca-evaluation-model",id("evaluation-model").value)}catch(error){}lastAnalysis=null;renderAnalysis(null);if(reviewMode){reviewAnalysisSerial++;reviewBatchRunning=false;reviewBatchModel="";positionAnalyses={};analysisHistory=[];reviewGrades={};startFullGameReview(true)}else requestAnalysis()}
+function connectMonitoring(){if(!wsPath||wsDelay<=0||wsMaxDelay<=0)return;var url=new URL(apiUrl(wsPath));url.protocol=location.protocol==="https:"?"wss:":"ws:";url.searchParams.set("after_sequence",lastSequence);ws=new WebSocket(url.toString());ws.onopen=function(){wsDelay=wsBaseDelay;setConnectionStatus("ready","4520 ready")};ws.onmessage=function(message){try{applyMonitoringEvent(JSON.parse(message.data))}catch(ex){}};ws.onclose=function(){ws=null;if(participantsLoaded)setConnectionStatus("ready","4520 ready");else setConnectionStatus("error","Live updates off");var delay=wsDelay;wsDelay=Math.min(wsDelay*2,wsMaxDelay);setTimeout(connectMonitoring,delay)};ws.onerror=function(){if(ws)ws.close()}}
+function applyMonitoringEvent(event){if(typeof event.sequence==="number"&&event.sequence>lastSequence)lastSequence=event.sequence;var payload=event.payload||{};if(event.type==="error")setMetric("analysis-status",payload.message||"Backend error")}
+function setMetric(name,value){var element=id(name);if(element)element.innerText=value===void 0||value===null?"-":value}
+function setupInstallPrompt(){var button=id("install-button");if(!button)return;window.addEventListener("beforeinstallprompt",function(event){event.preventDefault();deferredInstallPrompt=event;button.hidden=false});button.addEventListener("click",function(){if(!deferredInstallPrompt)return;deferredInstallPrompt.prompt();deferredInstallPrompt.userChoice.finally(function(){deferredInstallPrompt=null;button.hidden=true})});window.addEventListener("appinstalled",function(){deferredInstallPrompt=null;button.hidden=true;setMetric("analysis-status","Hexadeca installed")})}
+function registerAppShell(){if(!("serviceWorker" in navigator)||window.location.protocol==="file:")return;navigator.serviceWorker.register("sw.js").catch(function(){})}
+function setSelect(name,value){var element=id(name);if(!element||value===void 0||value===null)return;element.innerHTML="";var option=document.createElement("option");option.textContent=value;element.appendChild(option)}
+function setMoveSimulations(value){var parsed=Number(value);if(!Number.isInteger(parsed))return;var minimum=moveSimulationsConfig.minimum,maximum=moveSimulationsConfig.maximum,step=moveSimulationsConfig.step;if(parsed<minimum)parsed=minimum;if(parsed>maximum)parsed=maximum;parsed=minimum+Math.round((parsed-minimum)/step)*step;moveSimulations=parsed;var slider=id("move-simulations");if(slider){slider.value=parsed;slider.min=minimum;slider.max=maximum;slider.step=step}setMetric("sim-label",parsed);try{localStorage.setItem("hexadeca-move-simulations",String(parsed))}catch(error){}}
+function numberText(value){return typeof value==="number"&&isFinite(value)?value.toFixed(4):"-"}
+function durationText(seconds){if(typeof seconds!=="number"||seconds<0)return"-";var total=Math.round(seconds),hours=Math.floor(total/3600),minutes=Math.floor(total%3600/60),remaining=total%60;return(hours?hours+"h ":"")+(minutes?minutes+"m ":"")+remaining+"s"}
+function memoryText(bytes){return(Math.round(bytes/1048576)+" MiB")}
+function appendLog(text){var log=id("log-container");if(!log)return;var line=document.createElement("div");line.className="log-line";line.innerText=text;log.appendChild(line);log.scrollTop=log.scrollHeight;if(log.children.length>50)log.removeChild(log.firstChild)}
+function css(){}
+function gc(){var lg=id("log-container");if(lg)lg.innerHTML=""}
+function lcp(){var s=id("checkpoint-list");if(!s||!s.value)return;fetch(apiUrl("/api/checkpoints/load"),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({identifier:s.value})}).then(function(r){return r.json()}).then(function(result){appendLog(result.message||"Checkpoint request complete");refreshRuntime();rcp()}).catch(function(){appendLog("Checkpoint load failed")})}
+function scp(){rcp()}
+function rcp(){fetch(apiUrl("/api/checkpoints")).then(function(r){return r.json()}).then(function(d){var s=id("checkpoint-list");if(s){s.innerHTML="";(d.checkpoints||[]).forEach(function(c){var o=document.createElement("option");o.value=c;o.textContent=c;s.appendChild(o)})}})}
+function gameActions(){return hs.map(function(item){return item.action}).filter(function(action){return typeof action==="number"})}
+function legalOnBoard(board,row,column){if(!Array.isArray(board)||row<0||row>=BS||column<0||column>=BS||board[row][column]!==0)return false;for(var d=-1;d<=1;d++)for(var e=-1;e<=1;e++){var nextRow=row+d,nextColumn=column+e;if(nextRow>=0&&nextRow<BS&&nextColumn>=0&&nextColumn<BS&&(board[nextRow][nextColumn]===1||board[nextRow][nextColumn]===2))return false}return true}
+function hasLegalMovesOnBoard(board){for(var row=0;row<BS;row++)for(var column=0;column<BS;column++)if(legalOnBoard(board,row,column))return true;return false}
+function setTerminalDownloadState(complete){var buttons=[id("btn-save-game"),id("review-save-game")];buttons.forEach(function(button){if(!button)return;button.dataset.complete=complete?"1":"0";button.disabled=!complete;button.title=complete?"Download complete game record":"Available after the game ends"})}
+function finalMatrixForBoard(board){var activeBoard=b;b=board;var score=cv(),matrix=Array(BS).fill().map(function(){return Array(BS).fill(0)});for(var row=0;row<BS;row++)for(var column=0;column<BS;column++){var cell=b[row][column];if(cell===1)matrix[row][column]=1;else if(cell===2)matrix[row][column]=-1;else matrix[row][column]=score.ow[row][column]===1?2:score.ow[row][column]===2?-2:0}b=activeBoard;return matrix}
+function saveGameRecord(){if(ia){setMetric("analysis-status","Wait for the AI move to finish before downloading");return}var resultBoard=reviewMode&&reviewFinalBoard?reviewFinalBoard:b,activeBoard=b;b=resultBoard;var complete=!hv();if(!complete){b=activeBoard;setMetric("analysis-status","Finish the game before downloading");return}var finalMatrix=finalMatrixForBoard(resultBoard);b=activeBoard;var record={moves:gameActions(),final_matrix:finalMatrix},blob=new Blob([JSON.stringify(record,null,2)],{type:"application/json"}),url=URL.createObjectURL(blob),link=document.createElement("a"),stamp=new Date().toISOString().replace(/[T:]/g,"-").replace(/\.\d{3}Z$/,"Z");link.href=url;link.download="hexadeca-game-"+stamp+".json";document.body.appendChild(link);link.click();link.remove();URL.revokeObjectURL(url);setMetric("analysis-status","Game downloaded")}
+function loadGameFile(file){var reader=new FileReader();reader.onload=function(){try{var record=JSON.parse(String(reader.result||""));if(!record||!Array.isArray(record.moves)||!Array.isArray(record.final_matrix))throw Error("Unsupported Hexadeca game record");var moves=Array.isArray(record.moves)?record.moves:Array.isArray(record.history)?record.history.map(function(item){return item.action}):null;if(!moves||moves.length>BS*BS)throw Error("Game record has no valid moves");var nextBoard=Array(BS).fill().map(function(){return Array(BS).fill(0)}),nextHistory=[],nextTurn=1;moves.forEach(function(action){if(!Number.isInteger(action)||action<0||action>=BS*BS)throw Error("Game record contains an invalid move");var row=Math.floor(action/BS),column=action%BS;if(!legalOnBoard(nextBoard,row,column))throw Error("Game record contains an illegal move");nextHistory.push({board:nextBoard.map(function(line){return line.slice()}),currentTurn:nextTurn,action:action});nextBoard[row][column]=nextTurn;nextTurn=3-nextTurn});al=false;ia=false;aiPaused=true;aiMoveSerial++;analysisRequestSerial++;reviewAnalysisSerial++;analysisQueued=false;analysisPending=false;if(reviewMode)exitReviewMode();else setWorkspaceTab("play");b=nextBoard;ct=nextTurn;hs=nextHistory;reviewFinalBoard=b.map(function(line){return line.slice()});reviewFinalTurn=ct;lastAnalysis=null;pendingMove=null;positionAnalyses={};analysisHistory=Array.isArray(record.analysis_history)?record.analysis_history.filter(function(item){return item&&Number.isInteger(item.ply)&&typeof item.blueWin==="number"}).map(function(item){return{ply:item.ply,blueWin:item.blueWin,blackWin:item.blueWin}}):[];reviewGrades=record.review_grades&&typeof record.review_grades==="object"?record.review_grades:{};reviewBatchRunning=false;reviewBatchCompleted=0;reviewBatchTotal=0;reviewBatchModel="";setTerminalDownloadState(!hasLegalMovesOnBoard(b));if(record.players&&typeof record.players.blue==="string"&&Array.from(id("p1-type").options).some(function(option){return option.value===record.players.blue}))id("p1-type").value=record.players.blue;if(record.players&&typeof record.players.orange==="string"&&Array.from(id("p2-type").options).some(function(option){return option.value===record.players.orange}))id("p2-type").value=record.players.orange;if(typeof record.evaluation_model==="string"&&Array.from(id("evaluation-model").options).some(function(option){return option.value===record.evaluation_model}))id("evaluation-model").value=record.evaluation_model;if(Number.isInteger(record.simulations))setMoveSimulations(record.simulations);persistPlaySelections();renderAnalysis(null);rn();setMetric("analysis-status",hasLegalMovesOnBoard(b)?"Game loaded · AI paused":"Game loaded · opening Review");if(!hasLegalMovesOnBoard(b))enterReviewMode();else requestAnalysis()}catch(error){setMetric("analysis-status","Load failed");appendLog(error.message||"Game record could not be loaded")}};reader.onerror=function(){setMetric("analysis-status","Load failed");appendLog("Game record could not be read")};reader.readAsText(file)}
+function requestAnalysis(){var evaluator=id("evaluation-model");if(reviewMode||blindMode||md!=="play"||bl||ia||!participantsLoaded||!evaluator||!evaluator.value)return;if(analysisPending){analysisQueued=true;return}var serial=++analysisRequestSerial;analysisPending=true;setMetric("analysis-status","Thinking...");fetch(apiUrl("/api/play/analyze"),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({board:b,currentPlayer:ct,history:gameActions(),model:evaluator.value})}).then(function(r){return r.json().then(function(data){if(!r.ok)throw Error(data.detail||"Analysis unavailable");return data})}).then(function(data){if(serial!==analysisRequestSerial||blindMode)return;lastAnalysis=data;finalizePreviousMove(data);recordAnalysis(data,hs.length);renderAnalysis(data);rn()}).catch(function(error){if(serial===analysisRequestSerial&&!blindMode){setMetric("analysis-status","Unavailable");appendLog(error.message||"Analysis unavailable")}}).finally(function(){analysisPending=false;if(analysisQueued){analysisQueued=false;if(!isHuman(gpt(ct)))cat();else requestAnalysis()}})}
+function renderAnalysis(data){if(!data){setMetric("analysis-status","Waiting");setMetric("analysis-to-play","-");setMetric("analysis-win","-");setMetric("analysis-win-label","Win rate");setMetric("analysis-sims","-");setMetric("analysis-black-win","Blue -");renderCandidates([]);renderBranch([]);drawWinrate();return}var blueWin=typeof data.blue_win_probability==="number"?data.blue_win_probability:data.black_win_probability,blueScore=typeof data.predicted_blue_score==="number"?data.predicted_blue_score:data.predicted_black_score,orangeScore=typeof data.predicted_orange_score==="number"?data.predicted_orange_score:data.predicted_white_score,resultText=data.solved?(data.solved_outcome>0?"Win":data.solved_outcome<0?"Loss":"Draw"):(data.win_probability*100).toFixed(1)+"%";setMetric("analysis-status",data.solved?"Solved":numberText(data.elapsed_seconds)+"s");setMetric("analysis-to-play",data.current_player===1?"P1":"P2");setMetric("analysis-win-label",data.solved?"Proven result":(data.current_player===1?"P1 win rate":"P2 win rate"));setMetric("analysis-win",resultText);id("analysis-win").className="text-lg font-semibold "+(data.current_player===1?"text-player-1":"text-player-2");setMetric("analysis-sims",data.solved?data.exact_states_evaluated:data.simulations);setMetric("analysis-black-win","Blue "+(blueWin*100).toFixed(1)+"%");renderPositionScoreMargin(data.predicted_score_margin,blueScore,orangeScore);renderCandidates(data.candidates||[]);renderBranch(data.principal_variation||[]);drawWinrate()}
+function pointText(move){return String.fromCharCode(65+move.column)+(move.row+1)}
+function renderCandidates(items){var target=id("analysis-candidates");if(!target)return;target.innerHTML="";if(!items.length){target.innerHTML="<div class='analysis-muted py-2'>No analysis yet</div>";return}items.forEach(function(item,index){var row=document.createElement("div"),result=item.solved?(item.solved_outcome>0?"Win":item.solved_outcome<0?"Loss":"Draw"):(item.win_probability*100).toFixed(1)+"%";row.className="analysis-table analysis-row text-slate-300";row.innerHTML="<span class='analysis-muted'>"+(index+1)+"</span><span class='font-semibold'>"+pointText(item)+"</span><span>"+item.visits+"</span><span class='analysis-good'>"+result+"</span><span class='analysis-muted'>"+(item.prior*100).toFixed(1)+"%</span>";target.appendChild(row)})}
+function renderBoardRecommendations(){if(reviewMode||blindMode||!analysisDetailsVisible)return;if(!lastAnalysis||lastAnalysis.current_player!==ct)return;(lastAnalysis.candidates||[]).forEach(function(item,index){if(b[item.row][item.column]!==0)return;var cell=be.children[item.row*BS+item.column],marker=document.createElement("div");marker.className="absolute w-[62%] h-[62%] rounded-full flex items-center justify-center text-[9px] sm:text-xs font-bold border "+(ct===1?"bg-sky-400/25 border-sky-300 text-sky-100":"bg-amber-400/25 border-amber-300 text-amber-100");marker.innerText=index+1;marker.title="Rank "+(index+1)+" · "+(item.win_probability*100).toFixed(1)+"%";cell.appendChild(marker)})}
+function renderPositionScoreMargin(margin,blackScore,whiteScore){if(typeof margin!=="number"||!isFinite(margin))return;var total=typeof blackScore==="number"&&isFinite(blackScore)&&typeof whiteScore==="number"&&isFinite(whiteScore)?blackScore+whiteScore:0,blackShare=total>0?blackScore/total:.5;blackShare=Math.max(0,Math.min(1,blackShare));id("position-bar-black").style.height=(blackShare*100)+"%";id("position-bar-white").style.height=((1-blackShare)*100)+"%";var label=id("position-score-margin"),rounded=Math.abs(margin)<.05?0:margin;label.innerText=(rounded>0?"+":"")+rounded.toFixed(1);label.className="position-winrail-value "+(rounded>0?"text-player-1":rounded<0?"text-player-2":"text-slate-400")}
+function setAnalysisDetails(visible){analysisDetailsVisible=!!visible;id("analysis-panel").classList.toggle("analysis-compact",!analysisDetailsVisible&&!reviewMode);id("analysis-detail-toggle").checked=analysisDetailsVisible;try{localStorage.setItem("hexadeca-analysis-details",analysisDetailsVisible?"1":"0")}catch(error){}rn();drawWinrate()}
+function restoreAnalysisDetails(){var visible=false;try{visible=localStorage.getItem("hexadeca-analysis-details")==="1"}catch(error){}setAnalysisDetails(visible)}
+function setBlindMode(enabled,refresh){blindMode=!!enabled;id("blind-mode-toggle").checked=blindMode;var reviewToggle=id("review-blind-mode-toggle");if(reviewToggle)reviewToggle.checked=blindMode;id("score-display").classList.toggle("hidden",blindMode);id("position-winrail").classList.toggle("invisible",blindMode);id("analysis-panel").classList.toggle("hidden",blindMode);if(blindMode){analysisRequestSerial++;analysisQueued=false;reviewAnalysisSerial++;reviewBatchRunning=false;lastAnalysis=null;pendingMove=null;renderAnalysis(null)}try{localStorage.setItem("hexadeca-blind-mode",blindMode?"1":"0")}catch(error){}rn();if(!blindMode&&refresh!==false){if(reviewMode)startFullGameReview(true);else requestAnalysis()}}
+function restoreBlindMode(){var enabled=false;try{enabled=localStorage.getItem("hexadeca-blind-mode")==="1"}catch(error){}setBlindMode(enabled,false)}
+function renderBranch(items){var target=id("analysis-branch");if(!target)return;target.innerHTML="";if(!items.length){target.innerHTML="<span class='analysis-muted'>-</span>";return}items.forEach(function(item){var span=document.createElement("span");span.className="px-1.5 py-1 rounded bg-slate-bg text-slate-300 font-mono";span.innerText=(item.player===1?"P1 ":"P2 ")+pointText(item);target.appendChild(span)})}
+function beginPreviousMove(action,player,before){pendingMove={action:action,player:player,before:before,ply:hs.length+1};var text=(player===1?"P1 ":"P2 ")+String.fromCharCode(65+(action%BS))+(Math.floor(action/BS)+1)+" · evaluating";id("analysis-previous").innerText=text}
+function finalizePreviousMove(after){if(!pendingMove||!after)return;var before=pendingMove.before,loss=null;if(before&&typeof before.win_probability==="number"&&typeof after.win_probability==="number")loss=Math.max(0,(before.win_probability-(1-after.win_probability))*100);if(loss!==null)reviewGrades[pendingMove.ply]=qualityFromLoss(loss);var action=pendingMove.action,text=(pendingMove.player===1?"P1 ":"P2 ")+String.fromCharCode(65+(action%BS))+(Math.floor(action/BS)+1);id("analysis-previous").innerText=loss===null?text+" · awaiting grade":text+" · "+qualityFromLoss(loss).name+" "+(loss>0?"-":"")+loss.toFixed(1)+" pp";pendingMove=null}
+function recordAnalysis(data,ply){if(!data)return;var blueWin=typeof data.blue_win_probability==="number"?data.blue_win_probability:data.black_win_probability;if(typeof blueWin!=="number")return;positionAnalyses[ply]=data;var record={ply:ply,blueWin:blueWin,blackWin:blueWin},index=analysisHistory.findIndex(function(item){return item.ply===ply});if(index>=0)analysisHistory[index]=record;else analysisHistory.push(record);analysisHistory.sort(function(a,b){return a.ply-b.ply});if(analysisHistory.length>120)analysisHistory.shift()}
+function enterReviewMode(){reviewMode=true;setWorkspaceTab("review");reviewFinalBoard=b.map(function(row){return row.slice()});reviewFinalTurn=ct;reviewPly=hs.length;al=false;bl=true;analysisRequestSerial++;analysisQueued=false;document.body.classList.add("review-active");id("analysis-panel").classList.remove("analysis-compact");id("review-controls").classList.remove("hidden");id("review-chart-step").classList.remove("hidden");id("review-range").max=hs.length;id("review-range").value=reviewPly;id("btn-undo").disabled=true;reviewEvaluationEnabled=true;id("review-evaluation-toggle").checked=true;id("review-blind-mode-toggle").checked=blindMode;try{localStorage.setItem("hexadeca-review-evaluation","1")}catch(error){}reviewTo(reviewPly);if(!blindMode)startFullGameReview(true)}
+function exitReviewMode(){reviewMode=false;setWorkspaceTab("play");reviewAnalysisSerial++;reviewBatchRunning=false;document.body.classList.remove("review-active");id("analysis-panel").classList.toggle("analysis-compact",!analysisDetailsVisible);id("review-controls").classList.add("hidden");id("review-chart-step").classList.add("hidden");id("review-grade").classList.add("hidden");id("review-grade").classList.remove("flex");id("review-batch-progress").classList.add("hidden");id("btn-undo").disabled=false;reviewFinalBoard=null;bl=false}
+function returnToPlay(){rg()}
+function reviewBy(delta){reviewTo(reviewPly+delta)}
+function reviewTo(value){if(!reviewMode)return;var target=Math.max(0,Math.min(hs.length,parseInt(value,10)||0)),snapshot=reviewSnapshot(target);reviewPly=target;b=snapshot.board;ct=snapshot.currentTurn;id("review-range").value=target;id("review-step-label").innerText=target===0?"Opening · before move 1":target===hs.length?"Move "+target+" · final position":"Move "+target+" / "+hs.length;id("review-chart-step").innerText="Current: "+target+" / "+hs.length;id("review-first").disabled=target===0;id("review-prev").disabled=target===0;id("review-next").disabled=target===hs.length;id("review-last").disabled=target===hs.length;lastAnalysis=positionAnalyses[target]||null;renderAnalysis(lastAnalysis);if(!lastAnalysis){var score=cv();renderPositionScoreMargin(score.bs-score.ws,score.bs,score.ws)}renderReviewGrade();rn();drawWinrate()}
+function reviewSnapshot(ply){if(ply<hs.length)return{board:hs[ply].board.map(function(row){return row.slice()}),currentTurn:hs[ply].currentTurn};return{board:reviewFinalBoard.map(function(row){return row.slice()}),currentTurn:reviewFinalTurn}}
+function setReviewEvaluation(enabled){reviewEvaluationEnabled=!!enabled;id("review-evaluation-toggle").checked=reviewEvaluationEnabled;try{localStorage.setItem("hexadeca-review-evaluation",reviewEvaluationEnabled?"1":"0")}catch(error){}renderReviewGrade();rn();if(reviewMode&&reviewEvaluationEnabled&&!blindMode)startFullGameReview(true)}
+function restoreReviewEvaluation(){try{reviewEvaluationEnabled=localStorage.getItem("hexadeca-review-evaluation")==="1"}catch(error){reviewEvaluationEnabled=false}id("review-evaluation-toggle").checked=reviewEvaluationEnabled}
+function reviewPositionRequest(ply,model){var snapshot=reviewSnapshot(ply);return fetch(apiUrl("/api/play/analyze"),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({board:snapshot.board,currentPlayer:snapshot.currentTurn,history:hs.slice(0,ply).map(function(item){return item.action}),model:model})}).then(reviewJson)}
+function renderReviewBatchProgress(label){var panel=id("review-batch-progress"),total=Math.max(1,reviewBatchTotal),percentage=Math.min(100,reviewBatchCompleted/total*100);panel.classList.remove("hidden");setMetric("review-batch-label",label);setMetric("review-batch-count",reviewBatchCompleted+" / "+reviewBatchTotal);id("review-batch-fill").style.width=percentage+"%"}
+function gradeReviewPly(ply){var before=positionAnalyses[ply-1],after=positionAnalyses[ply],move=hs[ply-1];if(!before||!after||!move)return;var played=(before.candidates||[]).find(function(candidate){return candidate.action===move.action}),best=(before.candidates||[])[0],playedWin=played&&typeof played.win_probability==="number"?played.win_probability:null,actualAfter=typeof after.win_probability==="number"?1-after.win_probability:null,bestWin=best&&typeof best.win_probability==="number"?best.win_probability:before.win_probability;if(typeof bestWin!=="number"||typeof actualAfter!=="number")return;reviewGrades[ply]=qualityFromLoss(Math.max(0,(bestWin-(playedWin===null?actualAfter:playedWin))*100))}
+function startFullGameReview(forceGrades){var evaluator=id("evaluation-model");if(!reviewMode||blindMode||reviewBatchRunning||!evaluator||!evaluator.value)return;if(reviewBatchModel!==evaluator.value){reviewBatchModel=evaluator.value;positionAnalyses={};analysisHistory=[];reviewGrades={}}var token=++reviewAnalysisSerial,terminal=positionAnalyses[hs.length]&&positionAnalyses[hs.length].model_identifier==="official-result"?positionAnalyses[hs.length]:null;if(terminal)recordAnalysis(terminal,hs.length);var missing=[];for(var ply=0;ply<hs.length;ply++)if(!positionAnalyses[ply])missing.push(ply);reviewBatchTotal=missing.length;reviewBatchCompleted=0;if(!missing.length){for(var gradePly=1;gradePly<=hs.length;gradePly++)gradeReviewPly(gradePly);renderReviewBatchProgress("Full-game analysis complete");renderReviewGrade();rn();drawWinrate();return}reviewBatchRunning=true;renderReviewBatchProgress("Analyzing full game automatically…");var chain=Promise.resolve();missing.forEach(function(ply){chain=chain.then(function(){if(token!==reviewAnalysisSerial||!reviewMode||blindMode)throw Error("Review analysis superseded");return reviewPositionRequest(ply,evaluator.value).then(function(analysis){positionAnalyses[ply]=analysis;recordAnalysis(analysis,ply);gradeReviewPly(ply);gradeReviewPly(ply+1);reviewBatchCompleted++;renderReviewBatchProgress("Analyzing full game automatically…");if(reviewPly===ply){lastAnalysis=analysis;renderAnalysis(analysis)}renderReviewGrade();rn();drawWinrate()})})});chain.then(function(){if(token!==reviewAnalysisSerial||!reviewMode||blindMode)return;for(var gradePly=1;gradePly<=hs.length;gradePly++)gradeReviewPly(gradePly);reviewBatchRunning=false;renderReviewBatchProgress("Full-game analysis complete");renderReviewGrade();rn();drawWinrate()}).catch(function(error){if(token===reviewAnalysisSerial&&reviewMode&&!blindMode){reviewBatchRunning=false;renderReviewBatchProgress("Analysis paused — retry by toggling grading");appendLog(error.message||"Full-game analysis unavailable")}})}
+function requestReviewAnalysis(ply){var evaluator=id("evaluation-model");if(!reviewMode||!reviewEvaluationEnabled||ply<=0||!evaluator||!evaluator.value)return;var serial=++reviewAnalysisSerial,before=reviewSnapshot(ply-1),after=reviewSnapshot(ply),move=hs[ply-1],bodyBefore={board:before.board,currentPlayer:before.currentTurn,history:hs.slice(0,ply-1).map(function(item){return item.action}),model:evaluator.value},beforeAnalysis=null;renderReviewGrade();setMetric("review-grade-name","Evaluating position before move…");fetch(apiUrl("/api/play/analyze"),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(bodyBefore)}).then(reviewJson).then(function(result){beforeAnalysis=result;if(serial!==reviewAnalysisSerial||!reviewMode)throw Error("Review analysis superseded");setMetric("review-grade-name","Evaluating position after move…");return analysisForReviewAfter(after,ply,evaluator.value)}).then(function(afterAnalysis){if(serial!==reviewAnalysisSerial||!reviewMode)return;var played=(beforeAnalysis.candidates||[]).find(function(candidate){return candidate.action===move.action}),best=(beforeAnalysis.candidates||[])[0],playedWin=played&&typeof played.win_probability==="number"?played.win_probability:null,actualAfter=typeof afterAnalysis.win_probability==="number"?1-afterAnalysis.win_probability:null,bestWin=best&&typeof best.win_probability==="number"?best.win_probability:beforeAnalysis.win_probability,loss=Math.max(0,(bestWin-(playedWin===null?actualAfter:playedWin))*100);reviewGrades[ply]=qualityFromLoss(loss);positionAnalyses[ply-1]=beforeAnalysis;positionAnalyses[ply]=afterAnalysis;recordAnalysis(beforeAnalysis,ply-1);recordAnalysis(afterAnalysis,ply);renderReviewGrade();rn();drawWinrate()}).catch(function(error){if(serial===reviewAnalysisSerial&&reviewMode){setMetric("review-grade-name","Unavailable — try again");appendLog(error.message||"Move grading unavailable")}})}
+function analysisForReviewAfter(snapshot,ply,model){if(ply===hs.length&&positionAnalyses[ply]&&positionAnalyses[ply].model_identifier==="official-result")return Promise.resolve(positionAnalyses[ply]);return fetch(apiUrl("/api/play/analyze"),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({board:snapshot.board,currentPlayer:snapshot.currentTurn,history:hs.slice(0,ply).map(function(item){return item.action}),model:model})}).then(reviewJson)}
+function reviewJson(response){return response.json().then(function(data){if(!response.ok)throw Error(data.detail||"Review analysis unavailable");return data})}
+function qualityFromLoss(loss){var levels=[{max:.5,name:"Best",symbol:"★",className:"quality-best"},{max:1.5,name:"Brilliant",symbol:"!!",className:"quality-brilliant"},{max:4,name:"Good",symbol:"!",className:"quality-good"},{max:9,name:"Inaccuracy",symbol:"?!",className:"quality-inaccuracy"},{max:18,name:"Mistake",symbol:"?",className:"quality-mistake"},{max:32,name:"Blunder",symbol:"??",className:"quality-blunder"},{max:Infinity,name:"Catastrophe",symbol:"×",className:"quality-catastrophe"}];var result=levels.find(function(level){return loss<=level.max});return{name:result.name,symbol:result.symbol,className:result.className,loss:loss}}
+function renderReviewMarker(){if(!reviewMode||reviewPly<=0)return;var move=hs[reviewPly-1],cell=be.children[move.action],piece=cell.firstElementChild;if(piece)piece.classList.add("review-current-piece");if(reviewEvaluationEnabled&&reviewGrades[reviewPly]){var grade=reviewGrades[reviewPly],badge=document.createElement("span");badge.className="move-quality-badge "+grade.className;badge.innerText=grade.symbol;badge.title=grade.name+" · "+grade.loss.toFixed(1)+" percentage points";cell.appendChild(badge)}}
+function renderReviewGrade(){var panel=id("review-grade"),grade=reviewGrades[reviewPly];if(!reviewMode||!reviewEvaluationEnabled||reviewPly<=0){panel.classList.add("hidden");panel.classList.remove("flex");return}panel.classList.remove("hidden");panel.classList.add("flex");if(!grade){id("review-grade-symbol").className="quality-symbol bg-slate-700";id("review-grade-symbol").innerText="…";id("review-grade-name").innerText="Ready to evaluate";id("review-grade-loss").innerText="";return}id("review-grade-symbol").className="quality-symbol "+grade.className;id("review-grade-symbol").innerText=grade.symbol;id("review-grade-name").innerText=grade.name;id("review-grade-loss").innerText=grade.loss.toFixed(1)+" pp lost"}
+function drawWinrate(){var canvas=id("winrate-chart");if(!canvas)return;var box=canvas.getBoundingClientRect(),ratio=window.devicePixelRatio||1,w=Math.max(220,box.width),h=Math.max(100,box.height),points=analysisHistory.slice().sort(function(a,b){return a.ply-b.ply});canvas.width=w*ratio;canvas.height=h*ratio;var ctx=canvas.getContext("2d");ctx.scale(ratio,ratio);ctx.clearRect(0,0,w,h);ctx.strokeStyle="rgba(255,255,255,.08)";ctx.lineWidth=1;for(var i=0;i<5;i++){var y=8+i*(h-16)/4;ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(w,y);ctx.stroke()}if(points.length<1)return;var maximumPly=Math.max(hs.length,points[points.length-1].ply,1),pointX=function(ply){return 8+ply/maximumPly*(w-16)},pointY=function(win){return h-8-win*(h-16)};ctx.strokeStyle="#38BDF8";ctx.lineWidth=2;ctx.beginPath();points.forEach(function(item,index){var x=pointX(item.ply),y=pointY(typeof item.blueWin==="number"?item.blueWin:item.blackWin);if(index===0)ctx.moveTo(x,y);else ctx.lineTo(x,y)});ctx.stroke();ctx.fillStyle="#38BDF8";points.forEach(function(item){ctx.beginPath();ctx.arc(pointX(item.ply),pointY(typeof item.blueWin==="number"?item.blueWin:item.blackWin),2.5,0,Math.PI*2);ctx.fill()});if(reviewMode){var markerX=pointX(reviewPly);ctx.strokeStyle="rgba(255,255,255,.92)";ctx.lineWidth=1.5;ctx.setLineDash([4,3]);ctx.beginPath();ctx.moveTo(markerX,4);ctx.lineTo(markerX,h-4);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle="#fff";ctx.beginPath();ctx.arc(markerX,8,3.5,0,Math.PI*2);ctx.fill()}}
+window.addEventListener("resize",drawWinrate);
+  setupInstallPrompt();registerAppShell();idom();setTerminalDownloadState(false);restoreAnalysisDetails();restoreBlindMode();restoreReviewEvaluation();renderPositionScoreMargin(0,128,128);rn();initMonitoring();requestAnalysis()
+</script>
+
+</body>
+</html>

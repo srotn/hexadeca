@@ -5,6 +5,7 @@ from training.arena import (
     ArenaBatch,
     ArenaCoordinator,
     ArenaGame,
+    ArenaGameCallback,
     ArenaModel,
     ArenaOpening,
     ArenaProgress,
@@ -12,10 +13,17 @@ from training.arena import (
     generate_openings,
     play_arena_game,
 )
+from training.augmentation import (
+    D4_TRANSFORM_COUNT,
+    D4_TRANSFORM_NAMES,
+    augment_training_batch,
+    select_d4_transform,
+)
 from training.checkpoint import (
     CHECKPOINT_SCHEMA_VERSION,
     CheckpointManager,
     CheckpointMetadata,
+    JsonValue,
     MetricValue,
     Stateful,
 )
@@ -72,10 +80,12 @@ from training.replay_store import (
 from training.self_play import (
     SELF_PLAY_SCHEMA_VERSION,
     ProgressCallback,
+    RemoteEvaluatorTiming,
     SelfPlayBatch,
     SelfPlayCoordinator,
     SelfPlayGame,
     SelfPlayProgress,
+    SelfPlayTiming,
     derive_game_seed,
     play_self_play_game,
 )
@@ -87,13 +97,17 @@ from training.trainer import (
     TrainingBatchMetrics,
     TrainingIterationMetrics,
     build_optimizer,
+    build_restart_scheduler,
     build_scheduler,
+    restart_cosine_multiplier,
     warmup_cosine_multiplier,
 )
 
 __all__ = [
     "ARENA_SCHEMA_VERSION",
     "CHECKPOINT_SCHEMA_VERSION",
+    "D4_TRANSFORM_COUNT",
+    "D4_TRANSFORM_NAMES",
     "EVALUATION_REPORT_SCHEMA_VERSION",
     "REPLAY_SAMPLE_SCHEMA_VERSION",
     "REPLAY_STORE_SCHEMA_VERSION",
@@ -102,6 +116,7 @@ __all__ = [
     "ArenaCoordinator",
     "ArenaError",
     "ArenaGame",
+    "ArenaGameCallback",
     "ArenaInferenceError",
     "ArenaModel",
     "ArenaOpening",
@@ -123,9 +138,11 @@ __all__ = [
     "EvaluationReportError",
     "EvaluationReportStore",
     "EvaluationStatisticsError",
+    "JsonValue",
     "MetricSink",
     "MetricValue",
     "ProgressCallback",
+    "RemoteEvaluatorTiming",
     "ReplayBatch",
     "ReplayBuffer",
     "ReplayCollator",
@@ -142,6 +159,7 @@ __all__ = [
     "SelfPlayGame",
     "SelfPlayInferenceError",
     "SelfPlayProgress",
+    "SelfPlayTiming",
     "SelfPlayValidationError",
     "SelfPlayWorkerError",
     "SqliteReplayStore",
@@ -155,8 +173,10 @@ __all__ = [
     "TrainingBatchMetrics",
     "TrainingInfrastructureError",
     "TrainingIterationMetrics",
+    "augment_training_batch",
     "build_optimizer",
     "build_replay_data_loader",
+    "build_restart_scheduler",
     "build_scheduler",
     "calculate_arena_statistics",
     "derive_game_seed",
@@ -165,5 +185,7 @@ __all__ = [
     "performance_elo",
     "play_arena_game",
     "play_self_play_game",
+    "restart_cosine_multiplier",
+    "select_d4_transform",
     "warmup_cosine_multiplier",
 ]

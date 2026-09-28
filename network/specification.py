@@ -9,7 +9,10 @@ from config.schema import NetworkConfig, RulesConfig
 from network.errors import NetworkSpecificationError
 
 MODEL_SPEC_SCHEMA_VERSION = 1
+# The public release contains one versioned 16-plane encoder. Checkpoints are
+# kept separate by their ruleset and feature-schema identifiers.
 SUPPORTED_FEATURE_SCHEMA_ID = "hexadeca-v1-16p"
+SUPPORTED_FEATURE_SCHEMA_IDS = frozenset({SUPPORTED_FEATURE_SCHEMA_ID})
 SUPPORTED_INPUT_PLANES = 16
 
 _SpecValue = int | float | str
@@ -125,7 +128,7 @@ class NetworkSpecification:
             )
         if not self.ruleset_id:
             raise NetworkSpecificationError("ruleset_id must not be empty")
-        if self.feature_schema_id != SUPPORTED_FEATURE_SCHEMA_ID:
+        if self.feature_schema_id not in SUPPORTED_FEATURE_SCHEMA_IDS:
             raise NetworkSpecificationError(
                 f"Unsupported feature schema: {self.feature_schema_id}"
             )

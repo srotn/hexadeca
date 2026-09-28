@@ -69,7 +69,7 @@ def test_evaluation_search_completes_exact_simulations_in_real_batches() -> None
     assert result.maximum_batch_size == 4
     assert result.action_probabilities[0] == 1.0
     assert sum(result.policy_target) == pytest.approx(1.0)
-    assert result.policy_target != result.action_probabilities
+    assert result.policy_target == result.action_probabilities
     assert all(
         edge.virtual_visit_count == 0 and edge.virtual_value_sum == 0.0
         for edge in result.root.children.values()
@@ -127,6 +127,31 @@ def test_training_search_can_disable_root_noise_without_rng() -> None:
     )
 
 
+def test_post_opening_training_target_uses_zero_temperature() -> None:
+    """Replay targets become deterministic at the configured temperature boundary."""
+
+    config = load_config()
+    mcts_config = replace(
+        config.mcts,
+        engine="reference",
+        training_simulations=8,
+        max_inference_batch_size=4,
+        root_noise_enabled=False,
+    )
+    environment = GameEnvironment(config.rules)
+    for _ in range(mcts_config.stochastic_plies):
+        environment.step(environment.legal_moves()[0])
+
+    result = MctsSearch(config.rules, mcts_config, RecordingEvaluator()).run(
+        environment.state, SearchMode.TRAINING
+    )
+
+    assert environment.state.ply == mcts_config.stochastic_plies
+    assert result.policy_target == result.action_probabilities
+    assert result.policy_target.count(1.0) == 1
+    assert sum(result.policy_target) == pytest.approx(1.0)
+
+
 def test_terminal_leaf_uses_official_score_without_neural_evaluation() -> None:
     """A one-cell game backs up Black's official win from White's leaf view."""
 
@@ -136,6 +161,7 @@ def test_terminal_leaf_uses_official_score_without_neural_evaluation() -> None:
         config.mcts,
         evaluation_simulations=5,
         max_inference_batch_size=4,
+        exact_endgame_enabled=False,
     )
     evaluator = RecordingEvaluator(value=-1.0)
 
@@ -160,6 +186,7 @@ def test_neural_value_is_negated_from_child_to_root_perspective() -> None:
         config.mcts,
         evaluation_simulations=1,
         max_inference_batch_size=1,
+        exact_endgame_enabled=False,
     )
 
     result = MctsSearch(config.rules, mcts_config, RecordingEvaluator(value=1.0)).run(
@@ -197,6 +224,7 @@ def test_invalid_leaf_evaluation_is_rejected() -> None:
         config.mcts,
         evaluation_simulations=2,
         max_inference_batch_size=2,
+        exact_endgame_enabled=False,
     )
 
     with pytest.raises(InvalidEvaluationError, match="illegal"):

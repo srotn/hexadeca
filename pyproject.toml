@@ -1,39 +1,54 @@
 [build-system]
-requires = ["setuptools>=77"]
+# Keep this compatible with CUDA/PyTorch images that pin pybind11 2.13.x.
+# The extension only uses APIs available in pybind11 2.10+; requiring v3 here
+# makes pip's isolated build resolver fail before compilation on those images.
+requires = ["setuptools>=75", "pybind11>=2.10,<4"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "hexadeca-alpha-zero"
 version = "0.1.0"
-description = "A staged AlphaZero implementation for the Hexadeca board game."
+description = "A deterministic 16×16 spatial strategy game with geometric move constraints, distance-layer scoring, and self-play AI."
 readme = "README.md"
 requires-python = ">=3.11,<3.14"
 dependencies = [
-  "tensorboard>=2.19,<3",
+  "fastapi>=0.115,<1",
+  "psutil>=7,<8",
+  "tensorboard>=2.16,<3",
   "torch>=2.7,<3",
+  "uvicorn[standard]>=0.34,<1",
 ]
 
 [project.optional-dependencies]
 dev = [
   "build>=1.2,<2",
+  "httpx2>=2,<3",
   "mypy>=1.15,<2",
   "pytest>=8.3,<9",
   "ruff>=0.9,<1",
 ]
 
-[tool.setuptools.packages.find]
-include = [
-  "benchmark*",
-  "config*",
-  "game*",
-  "mcts*",
-  "network*",
-  "training*",
-  "utils*",
+[tool.setuptools]
+# Keep the distribution limited to the public 16×16 implementation.  An
+# explicit list also prevents local, ignored experiment directories from being
+# discovered by setuptools during a build from a populated research checkout.
+packages = [
+  "analysis",
+  "benchmark",
+  "benchmark.decision_quality",
+  "config",
+  "game",
+  "mcts",
+  "monitoring",
+  "native",
+  "network",
+  "training",
+  "utils",
 ]
 
 [tool.setuptools.package-data]
-config = ["*.toml"]
+config = ["default.toml"]
+native = ["*.pyi"]
 
 [tool.pytest.ini_options]
 addopts = "-ra"
@@ -45,6 +60,22 @@ target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "B", "UP", "SIM", "RUF"]
+# The public research code contains intentional metric names such as D/G/S/B,
+# Chinese explanatory strings, and a few long scientific descriptions. Formatting
+# remains enforced separately; these checks avoid rejecting those domain labels.
+ignore = [
+  "E501",
+  "E743",
+  "F401",
+  "I001",
+  "N802",
+  "RUF001",
+  "RUF022",
+  "RUF023",
+  "RUF034",
+  "SIM300",
+  "UP032",
+]
 
 [tool.ruff.lint.isort]
 known-first-party = [
@@ -52,6 +83,7 @@ known-first-party = [
   "config",
   "game",
   "mcts",
+  "monitoring",
   "network",
   "training",
   "utils",
@@ -60,5 +92,15 @@ known-first-party = [
 [tool.mypy]
 python_version = "3.11"
 strict = true
-files = ["benchmark", "config", "game", "mcts", "network", "training", "utils"]
+files = [
+  "benchmark",
+  "config",
+  "game",
+  "mcts",
+  "monitoring",
+  "native",
+  "network",
+  "training",
+  "utils",
+]
 warn_unused_configs = true

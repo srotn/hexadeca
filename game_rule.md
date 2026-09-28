@@ -100,6 +100,5 @@ d2(x, s) = (x.row - s.row)^2 + (x.column - s.column)^2
 ```text
 action = row * 16 + column
 ```
-
 任何修改棋盘尺寸、相邻范围、距离定义、距离层 Tie Break、每格一分或动作映射的
 行为，都必须创建新的规则版本，不能在 `hexadeca-v1` 中静默改变。

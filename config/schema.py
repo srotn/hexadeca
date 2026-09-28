@@ -4,12 +4,12 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from math import isfinite
+from math import isclose, isfinite
 from pathlib import Path
 from typing import Any, TypeVar
 
 _T = TypeVar("_T")
-CONFIG_SCHEMA_VERSION = 7
+CONFIG_SCHEMA_VERSION = 14
 
 
 class SchemaError(ValueError):
@@ -67,6 +67,7 @@ class NetworkConfig:
 class MctsConfig:
     """Confirmed neural-MCTS search parameters."""
 
+    engine: str
     training_simulations: int
     evaluation_simulations: int
     c_puct: float
@@ -80,16 +81,24 @@ class MctsConfig:
     stochastic_plies: int
     opening_temperature: float
     endgame_temperature: float
+    exact_endgame_enabled: bool
+    exact_endgame_max_legal_moves: int
 
 
 @dataclass(frozen=True)
 class ReplayConfig:
-    """Replay-buffer capacity settings."""
+    """Replay-buffer capacity and optional training-sampling settings."""
 
     capacity_positions: int
     persistence_enabled: bool
     persistence_file_name: str
     persistence_chunk_size: int
+    sampling_mode: str
+    sample_positions: int
+    uniform_fraction: float
+    recent_fraction: float
+    hard_fraction: float
+    recent_window_fraction: float
 
 
 @dataclass(frozen=True)
@@ -99,11 +108,25 @@ class SelfPlayConfig:
     games_per_iteration: int
     worker_processes: int
     worker_torch_threads: int
+    inference_transport: str
     inference_max_batch_size: int
     inference_batch_wait_seconds: float
     inference_response_timeout_seconds: float
     worker_shutdown_timeout_seconds: float
     random_seed: int
+
+
+@dataclass(frozen=True)
+class SchedulerRestartConfig:
+    """One-shot scheduler recovery applied to one exact checkpoint."""
+
+    enabled: bool
+    checkpoint_id: str
+    initial_learning_rate: float
+    peak_learning_rate: float
+    warmup_steps: int
+    decay_steps: int
+    minimum_learning_rate: float
 
 
 @dataclass(frozen=True)
@@ -126,6 +149,7 @@ class TrainingConfig:
     data_loader_prefetch_factor: int
     data_loader_pin_memory: bool
     data_loader_drop_last: bool
+    symmetry_augmentation: str
     amp_enabled: bool
     amp_dtype: str
     amp_initial_scale: float
@@ -137,6 +161,7 @@ class TrainingConfig:
     scheduler_warmup_steps: int
     scheduler_decay_steps: int
     scheduler_minimum_learning_rate: float
+    scheduler_restart: SchedulerRestartConfig
     checkpoint_interval_iterations: int
     tensorboard_enabled: bool
     tensorboard_log_interval_batches: int
@@ -207,6 +232,15 @@ class BenchmarkConfig:
     trainer_benchmark_measurement_batches: int
     evaluation_benchmark_games: int
     evaluation_benchmark_simulations: int
+    native_warmup_iterations: int
+    native_measurement_iterations: int
+    native_feature_batch_size: int
+    native_mcts_simulations: int
+    monitoring_warmup_events: int
+    monitoring_measurement_events: int
+    transport_warmup_iterations: int
+    transport_measurement_iterations: int
+    transport_batch_size: int
     random_seed: int
 
 
@@ -232,6 +266,38 @@ class LoggingConfig:
 
 
 @dataclass(frozen=True)
+class MonitoringConfig:
+    """Long-running training service and public monitoring controls."""
+
+    bind_host: str
+    bind_port: int
+    training_device: str
+    auto_resume: bool
+    iteration_limit: int
+    replay_save_interval_iterations: int
+    event_buffer_capacity: int
+    event_replay_limit: int
+    telemetry_interval_seconds: float
+    status_refresh_interval_seconds: float
+    gpu_probe_timeout_seconds: float
+    websocket_ping_interval_seconds: float
+    websocket_ping_timeout_seconds: float
+    websocket_poll_interval_seconds: float
+    websocket_max_message_bytes: int
+    client_reconnect_delay_seconds: float
+    client_reconnect_max_delay_seconds: float
+    log_tail_lines: int
+    frontend_file_name: str
+    evaluation_enabled: bool
+    evaluation_interval_iterations: int
+    interactive_move_simulations_default: int
+    interactive_move_simulations_minimum: int
+    interactive_move_simulations_maximum: int
+    interactive_move_simulations_step: int
+    interactive_analysis_simulations: int
+
+
+@dataclass(frozen=True)
 class AppConfig:
     """Fully validated configuration consumed by application components."""
 
@@ -246,6 +312,7 @@ class AppConfig:
     benchmark: BenchmarkConfig
     paths: PathsConfig
     logging: LoggingConfig
+    monitoring: MonitoringConfig
 
 
 def build_config(raw: Mapping[str, Any]) -> AppConfig:
@@ -265,6 +332,7 @@ def build_config(raw: Mapping[str, Any]) -> AppConfig:
             "benchmark",
             "paths",
             "logging",
+            "monitoring",
         },
         "root",
     )
@@ -279,6 +347,7 @@ def build_config(raw: Mapping[str, Any]) -> AppConfig:
     benchmark = _build_benchmark(_section(raw, "benchmark"))
     paths = _build_paths(_section(raw, "paths"))
     logging = _build_logging(_section(raw, "logging"))
+    monitoring = _build_monitoring(_section(raw, "monitoring"))
 
     if network.policy_size != rules.action_size:
         raise SchemaError(
@@ -296,6 +365,10 @@ def build_config(raw: Mapping[str, Any]) -> AppConfig:
         raise SchemaError("At least one training loss weight must be positive")
     if not mcts.root_noise_only:
         raise SchemaError("Only root-scoped MCTS noise is supported")
+    if mcts.exact_endgame_max_legal_moves > rules.action_size:
+        raise SchemaError(
+            "mcts.exact_endgame_max_legal_moves must not exceed the action size"
+        )
     if training.batch_size > replay.capacity_positions:
         raise SchemaError("training.batch_size must not exceed replay capacity")
     if training.minimum_replay_positions < training.batch_size:
@@ -309,6 +382,32 @@ def build_config(raw: Mapping[str, Any]) -> AppConfig:
     if training.scheduler_minimum_learning_rate > training.learning_rate:
         raise SchemaError(
             "training.scheduler_minimum_learning_rate must not exceed learning_rate"
+        )
+    restart = training.scheduler_restart
+    if restart.minimum_learning_rate > restart.initial_learning_rate:
+        raise SchemaError(
+            "training.scheduler_restart.minimum_learning_rate must not exceed "
+            "initial_learning_rate"
+        )
+    if restart.initial_learning_rate > restart.peak_learning_rate:
+        raise SchemaError(
+            "training.scheduler_restart.initial_learning_rate must not exceed "
+            "peak_learning_rate"
+        )
+    if restart.peak_learning_rate > training.learning_rate:
+        raise SchemaError(
+            "training.scheduler_restart.peak_learning_rate must not exceed "
+            "training.learning_rate"
+        )
+    if restart.enabled and restart.checkpoint_id == "none":
+        raise SchemaError(
+            "training.scheduler_restart.checkpoint_id must identify a checkpoint "
+            "when restart is enabled"
+        )
+    if restart.enabled and restart.checkpoint_id in {"latest", "best"}:
+        raise SchemaError(
+            "training.scheduler_restart.checkpoint_id must be an immutable "
+            "checkpoint ID, not an alias"
         )
     if training.adamw_beta1 >= 1.0 or training.adamw_beta2 >= 1.0:
         raise SchemaError("training AdamW beta values must be less than 1.0")
@@ -342,6 +441,52 @@ def build_config(raw: Mapping[str, Any]) -> AppConfig:
         raise SchemaError(
             "evaluation confidence lower bound must be less than promotion_score"
         )
+    if monitoring.event_replay_limit > monitoring.event_buffer_capacity:
+        raise SchemaError(
+            "monitoring.event_replay_limit must not exceed event_buffer_capacity"
+        )
+    if (
+        monitoring.client_reconnect_max_delay_seconds
+        < monitoring.client_reconnect_delay_seconds
+    ):
+        raise SchemaError(
+            "monitoring.client_reconnect_max_delay_seconds must be at least "
+            "client_reconnect_delay_seconds"
+        )
+    if monitoring.evaluation_enabled and monitoring.evaluation_interval_iterations <= 0:
+        raise SchemaError(
+            "monitoring.evaluation_interval_iterations must be positive when "
+            "evaluation_enabled is true"
+        )
+    if (
+        monitoring.interactive_move_simulations_minimum
+        > monitoring.interactive_move_simulations_maximum
+    ):
+        raise SchemaError(
+            "monitoring.interactive_move_simulations_minimum must not exceed maximum"
+        )
+    if not (
+        monitoring.interactive_move_simulations_minimum
+        <= monitoring.interactive_move_simulations_default
+        <= monitoring.interactive_move_simulations_maximum
+    ):
+        raise SchemaError(
+            "monitoring.interactive_move_simulations_default must be within range"
+        )
+    if (
+        monitoring.interactive_move_simulations_maximum
+        - monitoring.interactive_move_simulations_minimum
+    ) % monitoring.interactive_move_simulations_step:
+        raise SchemaError(
+            "monitoring interactive move simulation range must align with its step"
+        )
+    if (
+        monitoring.interactive_move_simulations_default
+        - monitoring.interactive_move_simulations_minimum
+    ) % monitoring.interactive_move_simulations_step:
+        raise SchemaError(
+            "monitoring interactive move simulation default must align with its step"
+        )
     return AppConfig(
         project=project,
         rules=rules,
@@ -354,6 +499,7 @@ def build_config(raw: Mapping[str, Any]) -> AppConfig:
         benchmark=benchmark,
         paths=paths,
         logging=logging,
+        monitoring=monitoring,
     )
 
 
@@ -447,6 +593,7 @@ def _build_mcts(raw: Mapping[str, Any]) -> MctsConfig:
     _reject_unknown(
         raw,
         {
+            "engine",
             "training_simulations",
             "evaluation_simulations",
             "c_puct",
@@ -460,10 +607,13 @@ def _build_mcts(raw: Mapping[str, Any]) -> MctsConfig:
             "stochastic_plies",
             "opening_temperature",
             "endgame_temperature",
+            "exact_endgame_enabled",
+            "exact_endgame_max_legal_moves",
         },
         "mcts",
     )
     return MctsConfig(
+        engine=_choice(raw, "engine", "mcts", {"native", "reference"}),
         training_simulations=_positive_int(raw, "training_simulations", "mcts"),
         evaluation_simulations=_positive_int(raw, "evaluation_simulations", "mcts"),
         c_puct=_positive_float(raw, "c_puct", "mcts"),
@@ -483,6 +633,10 @@ def _build_mcts(raw: Mapping[str, Any]) -> MctsConfig:
         stochastic_plies=_nonnegative_int(raw, "stochastic_plies", "mcts"),
         opening_temperature=_positive_float(raw, "opening_temperature", "mcts"),
         endgame_temperature=_nonnegative_float(raw, "endgame_temperature", "mcts"),
+        exact_endgame_enabled=_bool(raw, "exact_endgame_enabled", "mcts"),
+        exact_endgame_max_legal_moves=_positive_int(
+            raw, "exact_endgame_max_legal_moves", "mcts"
+        ),
     )
 
 
@@ -494,6 +648,12 @@ def _build_replay(raw: Mapping[str, Any]) -> ReplayConfig:
             "persistence_enabled",
             "persistence_file_name",
             "persistence_chunk_size",
+            "sampling_mode",
+            "sample_positions",
+            "uniform_fraction",
+            "recent_fraction",
+            "hard_fraction",
+            "recent_window_fraction",
         },
         "replay",
     )
@@ -502,11 +662,43 @@ def _build_replay(raw: Mapping[str, Any]) -> ReplayConfig:
         persistence_file_name
     ).name != persistence_file_name or not persistence_file_name.endswith(".sqlite3"):
         raise SchemaError("replay.persistence_file_name must be a .sqlite3 file name")
+    sampling_mode = _choice(raw, "sampling_mode", "replay", {"uniform", "mixed"})
+    uniform_fraction = _bounded_float(
+        raw, "uniform_fraction", "replay", lower_bound=0.0, upper_bound=1.0
+    )
+    recent_fraction = _bounded_float(
+        raw, "recent_fraction", "replay", lower_bound=0.0, upper_bound=1.0
+    )
+    hard_fraction = _bounded_float(
+        raw, "hard_fraction", "replay", lower_bound=0.0, upper_bound=1.0
+    )
+    recent_window_fraction = _bounded_float(
+        raw,
+        "recent_window_fraction",
+        "replay",
+        lower_bound=0.0,
+        upper_bound=1.0,
+    )
+    fractions_total = uniform_fraction + recent_fraction + hard_fraction
+    if sampling_mode == "mixed" and not isclose(
+        fractions_total, 1.0, rel_tol=0.0, abs_tol=1e-6
+    ):
+        raise SchemaError("replay mixed sampling fractions must sum to one")
+    if sampling_mode == "mixed" and recent_window_fraction <= 0.0:
+        raise SchemaError(
+            "replay.recent_window_fraction must be positive for mixed sampling"
+        )
     return ReplayConfig(
         capacity_positions=_positive_int(raw, "capacity_positions", "replay"),
         persistence_enabled=_bool(raw, "persistence_enabled", "replay"),
         persistence_file_name=persistence_file_name,
         persistence_chunk_size=_positive_int(raw, "persistence_chunk_size", "replay"),
+        sampling_mode=sampling_mode,
+        sample_positions=_nonnegative_int(raw, "sample_positions", "replay"),
+        uniform_fraction=uniform_fraction,
+        recent_fraction=recent_fraction,
+        hard_fraction=hard_fraction,
+        recent_window_fraction=recent_window_fraction,
     )
 
 
@@ -517,6 +709,7 @@ def _build_self_play(raw: Mapping[str, Any]) -> SelfPlayConfig:
             "games_per_iteration",
             "worker_processes",
             "worker_torch_threads",
+            "inference_transport",
             "inference_max_batch_size",
             "inference_batch_wait_seconds",
             "inference_response_timeout_seconds",
@@ -529,6 +722,9 @@ def _build_self_play(raw: Mapping[str, Any]) -> SelfPlayConfig:
         games_per_iteration=_positive_int(raw, "games_per_iteration", "self_play"),
         worker_processes=_positive_int(raw, "worker_processes", "self_play"),
         worker_torch_threads=_positive_int(raw, "worker_torch_threads", "self_play"),
+        inference_transport=_choice(
+            raw, "inference_transport", "self_play", {"object", "compact"}
+        ),
         inference_max_batch_size=_positive_int(
             raw, "inference_max_batch_size", "self_play"
         ),
@@ -565,6 +761,7 @@ def _build_training(raw: Mapping[str, Any]) -> TrainingConfig:
             "data_loader_prefetch_factor",
             "data_loader_pin_memory",
             "data_loader_drop_last",
+            "symmetry_augmentation",
             "amp_enabled",
             "amp_dtype",
             "amp_initial_scale",
@@ -576,6 +773,7 @@ def _build_training(raw: Mapping[str, Any]) -> TrainingConfig:
             "scheduler_warmup_steps",
             "scheduler_decay_steps",
             "scheduler_minimum_learning_rate",
+            "scheduler_restart",
             "checkpoint_interval_iterations",
             "tensorboard_enabled",
             "tensorboard_log_interval_batches",
@@ -610,6 +808,9 @@ def _build_training(raw: Mapping[str, Any]) -> TrainingConfig:
         ),
         data_loader_pin_memory=_bool(raw, "data_loader_pin_memory", "training"),
         data_loader_drop_last=_bool(raw, "data_loader_drop_last", "training"),
+        symmetry_augmentation=_choice(
+            raw, "symmetry_augmentation", "training", {"none", "d4"}
+        ),
         amp_enabled=_bool(raw, "amp_enabled", "training"),
         amp_dtype=_choice(raw, "amp_dtype", "training", {"float16"}),
         amp_initial_scale=_positive_float(raw, "amp_initial_scale", "training"),
@@ -622,6 +823,9 @@ def _build_training(raw: Mapping[str, Any]) -> TrainingConfig:
         scheduler_decay_steps=_positive_int(raw, "scheduler_decay_steps", "training"),
         scheduler_minimum_learning_rate=_positive_float(
             raw, "scheduler_minimum_learning_rate", "training"
+        ),
+        scheduler_restart=_build_scheduler_restart(
+            _nested_section(raw, "scheduler_restart", "training")
         ),
         checkpoint_interval_iterations=_nonnegative_int(
             raw, "checkpoint_interval_iterations", "training"
@@ -643,6 +847,32 @@ def _build_training(raw: Mapping[str, Any]) -> TrainingConfig:
         white_score_loss_weight=_nonnegative_float(
             raw, "white_score_loss_weight", "training"
         ),
+    )
+
+
+def _build_scheduler_restart(raw: Mapping[str, Any]) -> SchedulerRestartConfig:
+    path = "training.scheduler_restart"
+    _reject_unknown(
+        raw,
+        {
+            "enabled",
+            "checkpoint_id",
+            "initial_learning_rate",
+            "peak_learning_rate",
+            "warmup_steps",
+            "decay_steps",
+            "minimum_learning_rate",
+        },
+        path,
+    )
+    return SchedulerRestartConfig(
+        enabled=_bool(raw, "enabled", path),
+        checkpoint_id=_string(raw, "checkpoint_id", path),
+        initial_learning_rate=_positive_float(raw, "initial_learning_rate", path),
+        peak_learning_rate=_positive_float(raw, "peak_learning_rate", path),
+        warmup_steps=_positive_int(raw, "warmup_steps", path),
+        decay_steps=_positive_int(raw, "decay_steps", path),
+        minimum_learning_rate=_positive_float(raw, "minimum_learning_rate", path),
     )
 
 
@@ -756,6 +986,15 @@ def _build_benchmark(raw: Mapping[str, Any]) -> BenchmarkConfig:
             "trainer_benchmark_measurement_batches",
             "evaluation_benchmark_games",
             "evaluation_benchmark_simulations",
+            "native_warmup_iterations",
+            "native_measurement_iterations",
+            "native_feature_batch_size",
+            "native_mcts_simulations",
+            "monitoring_warmup_events",
+            "monitoring_measurement_events",
+            "transport_warmup_iterations",
+            "transport_measurement_iterations",
+            "transport_batch_size",
             "random_seed",
         },
         "benchmark",
@@ -831,6 +1070,31 @@ def _build_benchmark(raw: Mapping[str, Any]) -> BenchmarkConfig:
         evaluation_benchmark_simulations=_positive_int(
             raw, "evaluation_benchmark_simulations", "benchmark"
         ),
+        native_warmup_iterations=_nonnegative_int(
+            raw, "native_warmup_iterations", "benchmark"
+        ),
+        native_measurement_iterations=_positive_int(
+            raw, "native_measurement_iterations", "benchmark"
+        ),
+        native_feature_batch_size=_positive_int(
+            raw, "native_feature_batch_size", "benchmark"
+        ),
+        native_mcts_simulations=_positive_int(
+            raw, "native_mcts_simulations", "benchmark"
+        ),
+        monitoring_warmup_events=_nonnegative_int(
+            raw, "monitoring_warmup_events", "benchmark"
+        ),
+        monitoring_measurement_events=_positive_int(
+            raw, "monitoring_measurement_events", "benchmark"
+        ),
+        transport_warmup_iterations=_nonnegative_int(
+            raw, "transport_warmup_iterations", "benchmark"
+        ),
+        transport_measurement_iterations=_positive_int(
+            raw, "transport_measurement_iterations", "benchmark"
+        ),
+        transport_batch_size=_positive_int(raw, "transport_batch_size", "benchmark"),
         random_seed=_nonnegative_int(raw, "random_seed", "benchmark"),
     )
 
@@ -878,10 +1142,120 @@ def _build_logging(raw: Mapping[str, Any]) -> LoggingConfig:
     )
 
 
+def _build_monitoring(raw: Mapping[str, Any]) -> MonitoringConfig:
+    _reject_unknown(
+        raw,
+        {
+            "bind_host",
+            "bind_port",
+            "training_device",
+            "auto_resume",
+            "iteration_limit",
+            "replay_save_interval_iterations",
+            "event_buffer_capacity",
+            "event_replay_limit",
+            "telemetry_interval_seconds",
+            "status_refresh_interval_seconds",
+            "gpu_probe_timeout_seconds",
+            "websocket_ping_interval_seconds",
+            "websocket_ping_timeout_seconds",
+            "websocket_poll_interval_seconds",
+            "websocket_max_message_bytes",
+            "client_reconnect_delay_seconds",
+            "client_reconnect_max_delay_seconds",
+            "log_tail_lines",
+            "frontend_file_name",
+            "evaluation_enabled",
+            "evaluation_interval_iterations",
+            "interactive_move_simulations_default",
+            "interactive_move_simulations_minimum",
+            "interactive_move_simulations_maximum",
+            "interactive_move_simulations_step",
+            "interactive_analysis_simulations",
+        },
+        "monitoring",
+    )
+    frontend_file_name = _string(raw, "frontend_file_name", "monitoring")
+    if Path(frontend_file_name).name != frontend_file_name:
+        raise SchemaError("monitoring.frontend_file_name must be a file name")
+    bind_port = _positive_int(raw, "bind_port", "monitoring")
+    if bind_port > 65_535:
+        raise SchemaError("monitoring.bind_port must be at most 65535")
+    return MonitoringConfig(
+        bind_host=_string(raw, "bind_host", "monitoring"),
+        bind_port=bind_port,
+        training_device=_choice(
+            raw, "training_device", "monitoring", {"auto", "cpu", "cuda"}
+        ),
+        auto_resume=_bool(raw, "auto_resume", "monitoring"),
+        iteration_limit=_nonnegative_int(raw, "iteration_limit", "monitoring"),
+        replay_save_interval_iterations=_positive_int(
+            raw, "replay_save_interval_iterations", "monitoring"
+        ),
+        event_buffer_capacity=_positive_int(raw, "event_buffer_capacity", "monitoring"),
+        event_replay_limit=_positive_int(raw, "event_replay_limit", "monitoring"),
+        telemetry_interval_seconds=_positive_float(
+            raw, "telemetry_interval_seconds", "monitoring"
+        ),
+        status_refresh_interval_seconds=_positive_float(
+            raw, "status_refresh_interval_seconds", "monitoring"
+        ),
+        gpu_probe_timeout_seconds=_positive_float(
+            raw, "gpu_probe_timeout_seconds", "monitoring"
+        ),
+        websocket_ping_interval_seconds=_positive_float(
+            raw, "websocket_ping_interval_seconds", "monitoring"
+        ),
+        websocket_ping_timeout_seconds=_positive_float(
+            raw, "websocket_ping_timeout_seconds", "monitoring"
+        ),
+        websocket_poll_interval_seconds=_positive_float(
+            raw, "websocket_poll_interval_seconds", "monitoring"
+        ),
+        websocket_max_message_bytes=_positive_int(
+            raw, "websocket_max_message_bytes", "monitoring"
+        ),
+        client_reconnect_delay_seconds=_positive_float(
+            raw, "client_reconnect_delay_seconds", "monitoring"
+        ),
+        client_reconnect_max_delay_seconds=_positive_float(
+            raw, "client_reconnect_max_delay_seconds", "monitoring"
+        ),
+        log_tail_lines=_positive_int(raw, "log_tail_lines", "monitoring"),
+        frontend_file_name=frontend_file_name,
+        evaluation_enabled=_bool(raw, "evaluation_enabled", "monitoring"),
+        evaluation_interval_iterations=_nonnegative_int(
+            raw, "evaluation_interval_iterations", "monitoring"
+        ),
+        interactive_move_simulations_default=_positive_int(
+            raw, "interactive_move_simulations_default", "monitoring"
+        ),
+        interactive_move_simulations_minimum=_positive_int(
+            raw, "interactive_move_simulations_minimum", "monitoring"
+        ),
+        interactive_move_simulations_maximum=_positive_int(
+            raw, "interactive_move_simulations_maximum", "monitoring"
+        ),
+        interactive_move_simulations_step=_positive_int(
+            raw, "interactive_move_simulations_step", "monitoring"
+        ),
+        interactive_analysis_simulations=_positive_int(
+            raw, "interactive_analysis_simulations", "monitoring"
+        ),
+    )
+
+
 def _section(raw: Mapping[str, Any], name: str) -> Mapping[str, Any]:
     value = _value(raw, name, "root")
     if not isinstance(value, Mapping):
         raise SchemaError(f"root.{name} must be a table")
+    return value
+
+
+def _nested_section(raw: Mapping[str, Any], name: str, path: str) -> Mapping[str, Any]:
+    value = _value(raw, name, path)
+    if not isinstance(value, Mapping):
+        raise SchemaError(f"{path}.{name} must be a table")
     return value
 
 
