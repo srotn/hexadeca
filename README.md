@@ -34,6 +34,34 @@
 
 精确残局模块目前用于小规模剩余局面的 WDL 求解，不代表 16×16 已被完全求解。当前公开版本也不附带训练 checkpoint、Replay buffer 或实验运行目录。
 
+## Visual results
+
+这些图展示了当前公开实现的 16×16 研究结果。它们来自历史 checkpoint 的固定配置演示，不代表完整的统计评估。
+
+### Five checkpoints, five terminal positions
+
+每个 checkpoint 各进行一局无噪声、每步 1600 simulations 的同 checkpoint 自对弈。棋盘颜色表示终局计分归属，圆点表示实际落子；下方给出五度特征和棋局长度、分差。
+
+<p align="center">
+  <img src="docs/assets/hexadeca-five-checkpoint-comparison.png" alt="Five Hexadeca checkpoints and their terminal positions" width="100%">
+</p>
+
+### Example terminal analysis
+
+下面是一局 `iteration-004520` 的终局分析：37 plies，蓝方 129 分，橙方 127 分。图中同时展示终局棋盘、局部格度热图、逐点散度/侵度热图和五度参数。
+
+<p align="center">
+  <img src="docs/assets/hexadeca-analysis-iteration-004520.png" alt="Terminal analysis of a Hexadeca game from iteration 004520" width="100%">
+</p>
+
+### Internal relative Elo
+
+下图使用已有的 16×16 checkpoint round-robin 结果绘制。每个点是 Bradley–Terry 相对等级分，阴影是 95% bootstrap 区间；`iteration-001360` 固定为 1000。评估使用每步 800 simulations、颜色平衡的 checkpoint 对战。该 Elo 只用于项目内部比较，不能与国际象棋、围棋或其他游戏的等级分直接比较。
+
+<p align="center">
+  <img src="docs/assets/hexadeca-relative-elo.png" alt="Hexadeca internal relative Elo across training checkpoints" width="100%">
+</p>
+
 ## 复杂度摘要
 
 下表是基于当前 `hexadeca-v1` 规则的组合计数与结构分析，不是程序 benchmark，也不是对所有状态逐一枚举后的运行时间测量。
