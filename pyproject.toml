@@ -47,7 +47,11 @@ packages = [
 ]
 
 [tool.setuptools.package-data]
-config = ["default.toml"]
+config = [
+  "default.toml",
+  "compact-inference.toml",
+  "compact-scheduler-restart-iteration-001870.toml",
+]
 native = ["*.pyi"]
 
 [tool.pytest.ini_options]

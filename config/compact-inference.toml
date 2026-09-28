@@ -1,0 +1,4 @@
+# Stage 12.2A benchmark profile. Requires a freshly compiled C++ extension.
+
+[self_play]
+inference_transport = "compact"

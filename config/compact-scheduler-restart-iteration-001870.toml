@@ -1,0 +1,11 @@
+[self_play]
+inference_transport = "compact"
+
+[training.scheduler_restart]
+enabled = true
+checkpoint_id = "iteration-001870"
+initial_learning_rate = 0.00003
+peak_learning_rate = 0.0001
+warmup_steps = 1000
+decay_steps = 30000
+minimum_learning_rate = 0.00003

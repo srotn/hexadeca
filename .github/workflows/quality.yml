@@ -25,7 +25,8 @@ jobs:
       - name: Install project and development dependencies
         run: python -m pip install -e ".[dev]"
       - name: Build wheel
-        run: python -m build --wheel --no-isolation
+        # Build requirements (including pybind11) live in an isolated environment.
+        run: python -m build --wheel
       - name: Check formatting
         run: ruff format --check $(git ls-files '*.py')
       - name: Lint

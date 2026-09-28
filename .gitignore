@@ -58,6 +58,8 @@ config/local*.toml
 config/*linux*.toml
 config/android-app.toml
 config/compact*.toml
+!config/compact-inference.toml
+!config/compact-scheduler-restart-iteration-001870.toml
 
 # 20×20 research branch and unpublished bundles
 experiments/
