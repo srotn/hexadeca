@@ -1,42 +1,40 @@
 # Hexadeca
 
-**Hexadeca 是一个原创棋类与计算机博弈 AI 研究项目。**
+**An original board game and a research project in computer game AI.**
 
-项目研究一个确定性的 16×16 空间策略游戏，并提供从规则引擎、神经网络、蒙特卡洛树搜索到自对弈训练和对战评估的完整实验平台。项目重点是让一个结构清晰、可复现实验的原创棋类成为计算机博弈研究对象。
+Hexadeca is a deterministic 16×16 spatial strategy game, with an experimental platform spanning the rules engine, neural networks, Monte Carlo tree search, self-play training, and match evaluation. Its geometric move constraints and distance-layer scoring provide a concrete setting for studying game AI through reproducible experiments.
 
-## 游戏概览
+## The game
 
-- 16×16 非环绕棋盘，黑方先行，双方交替落子。
-- 每回合在一个空格放置一枚棋子；棋子不移动、不吃子、不替换。
-- 候选格必须与所有已有棋子保持 Chebyshev 距离大于 1，因此任意棋子都会禁止其自身及周围八邻格。
-- 没有随机事件、隐藏信息、Pass 或同时行动。
-- 没有合法落点时立即终局。
-- 终局对全部 256 个格点进行距离层计分，首个黑白数量不相等的欧氏距离层决定该格归属。
-- 256 个可能的动作位置；由 2×2 分块可知理论最大长度为 64 plies。
+- A finite, non-wrapping **16×16 board**. Black moves first; players alternate.
+- Each move places one stone on an empty square. Stones never move, capture, or replace other stones.
+- A legal square must have Chebyshev distance greater than 1 from every existing stone. Each stone blocks its own square and its eight in-bounds neighbors, regardless of color.
+- **Deterministic, perfect information:** no random events, hidden information, passes, or simultaneous moves.
+- The game ends immediately when no legal move remains.
+- All 256 squares, including occupied squares, are scored. The first Euclidean distance layer containing unequal numbers of Black and White stones determines a square's owner; if every layer ties, the square is neutral. The higher total score wins.
+- **256 possible action locations** and a theoretical maximum of **64 plies**, bounded by a partition into 2×2 blocks.
 
-正式规则见 [`docs/rules/hexadeca-v1.md`](docs/rules/hexadeca-v1.md)。规则版本 `hexadeca-v1` 不随本次开源包装改变。
+See the [formal rules](docs/rules/hexadeca-v1.md). The public implementation targets the fixed `hexadeca-v1` ruleset.
 
-## AI 系统
+## AI system
 
-当前 16×16 实现包括：
+The current 16×16 implementation includes:
 
-- Policy Network：输出 256 个动作 logits，并在搜索时使用合法动作掩码；
-- Value Network：预测当前行棋方的结果以及双方归一化终局分数；
-- 残差 CNN 主干与 D4 数据增强；
-- MCTS / PUCT；
-- First Play Urgency（FPU）；
-- Virtual Loss；
-- Batch Leaf Selection 与 batched neural inference；
-- Dirichlet 根噪声和温度采样，用于自对弈探索；
-- Replay 数据、AdamW 训练和 checkpoint 管理；
-- 可选 C++20 Native 棋盘、计分、特征和搜索内核；
-- 自对弈、换色对战、置信区间和相对 Elo 评估。
+- **Policy Network:** 256 action logits, with legal-move masking during search.
+- **Value Network:** outcome prediction for the player to move and normalized final scores for both sides.
+- A residual CNN backbone and D4 data augmentation.
+- **MCTS / PUCT**, **First Play Urgency (FPU)**, and **Virtual Loss**.
+- **Batch Leaf Selection** and **batched inference**.
+- Dirichlet root noise and temperature sampling for self-play exploration.
+- Replay data, AdamW training, and checkpoint management.
+- C++20 native kernels for board operations, scoring, features, and search, alongside Python implementations.
+- **Self-play**, color-balanced matches, confidence intervals, and relative Elo evaluation.
 
-精确残局模块目前用于小规模剩余局面的 WDL 求解，不代表 16×16 已被完全求解。公开版本通过 Git LFS 提供下方展示使用的五个 16×16 checkpoint，便于直接体验；Replay buffer 和实验运行目录不随仓库发布。
+The exact endgame module solves win/draw/loss outcomes for positions with few remaining moves; the full 16×16 game is not solved. Five 16×16 checkpoints used in the showcase below are available through Git LFS. Replay buffers and experiment run directories are excluded.
 
-## 快速体验：无需重新训练
+## Quick demo: no retraining required
 
-安装 Git LFS、Python 3.11–3.13 和 C++20 编译工具后，在 POSIX shell（Windows 可用 Git Bash）中运行：
+Install Git LFS, Python 3.11–3.13, and C++20 build tools, then run in a POSIX shell (Git Bash on Windows):
 
 ```bash
 git clone https://github.com/srotn/hexadeca.git
@@ -45,17 +43,17 @@ bash scripts/download-checkpoints.sh
 bash scripts/quickstart.sh iteration-004520
 ```
 
-服务启动后打开 **http://localhost:5555**。启动脚本会按需创建虚拟环境并安装依赖，加载检查点用于交互评估，不会自动开始训练。
+Open **http://localhost:5555** once the server starts. The helper creates a virtual environment and installs dependencies as needed, then loads the checkpoint for interactive evaluation. It does not start a training job.
 
-五个检查点为 `iteration-001360`、`iteration-001910`、`iteration-002880`、`iteration-003800`、`iteration-004520`，权重及原始训练状态合计约 **191 MB**。环境要求、其他检查点/端口和故障排查见 [CHECKPOINTS.md](CHECKPOINTS.md)。
+Available checkpoints: `iteration-001360`, `iteration-001910`, `iteration-002880`, `iteration-003800`, and `iteration-004520`. Weights and original training state total approximately **191 MB**. See [CHECKPOINTS.md](CHECKPOINTS.md) for requirements, checkpoint and port selection, and troubleshooting.
 
 ## Visual results
 
-这些图展示了当前公开实现的 16×16 研究结果。它们来自历史 checkpoint 的固定配置演示，不代表完整的统计评估。
+The board and feature panels show one illustrative game per historical checkpoint under a fixed demonstration protocol. The Elo chart uses a separate, previously completed match evaluation.
 
 ### Five checkpoints, five terminal positions
 
-每个 checkpoint 各进行一局无噪声、每步 1600 simulations 的同 checkpoint 自对弈。棋盘颜色表示终局计分归属，圆点表示实际落子；下方给出五度特征和棋局长度、分差。
+Each checkpoint plays both sides of **one game**, with **1,600 simulations per move** and **no root noise**. Blue represents Black; orange represents White. Dots are stones and shaded squares show scoring ownership. Below the boards are four scalar descriptors from the five feature families, game lengths, and final score margins. These five games illustrate differences; they do not establish statistical significance.
 
 <p align="center">
   <img src="docs/assets/hexadeca-five-checkpoint-comparison.png" alt="Five Hexadeca checkpoints and their terminal positions" width="100%">
@@ -63,7 +61,7 @@ bash scripts/quickstart.sh iteration-004520
 
 ### Example terminal analysis
 
-下面是一局 `iteration-004520` 的终局分析：37 plies，蓝方 129 分，橙方 127 分。图中同时展示终局棋盘、局部格度热图、逐点散度/侵度热图和五度参数。
+The `iteration-004520` example ends after **37 plies**, with **Black 129 – White 127**. The figure combines the final board, local gridness maps, pointwise divergence and intrusion maps, and the five feature families: divergence (D), gridness (G), intrusion (I), symmetry (S), and edge affinity (B). These are project-specific geometric descriptors.
 
 <p align="center">
   <img src="docs/assets/hexadeca-analysis-iteration-004520.png" alt="Terminal analysis of a Hexadeca game from iteration 004520" width="100%">
@@ -71,17 +69,19 @@ bash scripts/quickstart.sh iteration-004520
 
 ### Internal relative Elo
 
-下图使用已有的 16×16 checkpoint round-robin 结果绘制。每个点是 Bradley–Terry 相对等级分，阴影是 95% bootstrap 区间；`iteration-001360` 固定为 1000。评估使用每步 800 simulations、颜色平衡的 checkpoint 对战。该 Elo 只用于项目内部比较，不能与国际象棋、围棋或其他游戏的等级分直接比较。
+Ratings come from the existing 16×16 checkpoint round-robin evaluation, using **800 simulations per move** and **color-balanced matches**. Points are Bradley–Terry relative ratings; shading shows **95% bootstrap intervals**, with `iteration-001360` anchored at **1000**. This is an internal comparison scale, not comparable to chess, Go, or other games' ratings.
 
 <p align="center">
   <img src="docs/assets/hexadeca-relative-elo.png" alt="Hexadeca internal relative Elo across training checkpoints" width="100%">
 </p>
 
-## 复杂度摘要
+The [figure renderer](docs/assets/render_showcase.py) and [curated source data](docs/assets/showcase-data.json) reproduce these figures without rerunning self-play or evaluation. Rendering requires Matplotlib; it is not needed to launch the demo.
 
-下表是基于当前 `hexadeca-v1` 规则的组合计数与结构分析，不是程序 benchmark，也不是对所有状态逐一枚举后的运行时间测量。
+## Complexity at a glance
 
-| 量 | 结果 |
+These figures are combinatorial counts and structural analyses under the current `hexadeca-v1` rules. They are not runtime benchmarks or measurements from enumerating every state.
+
+| Quantity | Result |
 |---|---:|
 | Maximum game length | 64 plies |
 | Action space | 256 |
@@ -110,11 +110,11 @@ Selected late-game layers are approximately:
 | ≤16 plies | ≈ 2.373 × 10^45 |
 | 64-piece terminal-layer states | ≈ 4.673 × 10^32 |
 
-推导口径、符号和限制见 [`docs/complexity.md`](docs/complexity.md)。
+See [the complexity notes](docs/complexity.md) for definitions, counting conventions, and limitations.
 
-## 安装
+## Installation
 
-项目需要 Python 3.11–3.13。推荐在虚拟环境中安装：
+Use Python 3.11–3.13 and a virtual environment. The editable build compiles the native extension, so C++20 build tools and Python development headers must be available.
 
 ```bash
 python -m venv .venv
@@ -123,46 +123,46 @@ python -m pip install --upgrade pip
 python -m pip install -e ".[dev]"
 ```
 
-Native C++20 扩展是可选加速路径。需要已安装的 C++20 编译工具时，可以执行：
+To rebuild the C++20 acceleration extension explicitly:
 
 ```bash
 python setup.py build_ext --inplace --force
 ```
 
-没有编译扩展时，Python 规则引擎和研究代码仍可用于规则测试、网络测试和 CPU 实验。
+The source tree also provides Python implementations for rules tests, network tests, and CPU experiments when native acceleration is unavailable.
 
-## 基本验证
+## Validation
 
 ```bash
 python -m pytest tests/test_board.py tests/test_environment.py tests/test_scoring.py
 python -m pytest
 ```
 
-完整架构和模块关系见 [`docs/architecture.md`](docs/architecture.md)。测试、格式化和类型检查命令以项目配置为准；CUDA、Native 编译器和 PyTorch 版本会影响可运行的实验范围。
+See the [architecture guide](docs/architecture.md) for module responsibilities. Test, formatting, and type-checking settings live in the project configuration. CUDA availability, native build tools, and the PyTorch version affect which experiments can run.
 
-## 目录结构
+## Repository layout
 
 ```text
-benchmark/   可复现的规则、网络、搜索、自对弈和训练 benchmark
-checkpoints/ 五个通过 Git LFS 发布的 16×16 检查点 bundle
-config/      16×16 规则和训练配置
-cpp/         可选 C++20 加速实现
-docs/        规则、复杂度和架构说明
-game/        棋盘、终局和计分
-mcts/        PUCT、节点、策略和残局搜索
-monitoring/  交互式监控 UI 与服务
-network/     输入特征、残差网络、策略与损失
-native/      Native 扩展的 Python 接口
-scripts/     检查点下载与快速启动
-tests/       规则、搜索、网络、训练和评估测试
-training/    自对弈、Replay、训练和对战评估
-utils/       通用工具
+benchmark/   Rules, network, search, self-play, and training benchmarks
+checkpoints/ Five 16×16 checkpoint bundles published through Git LFS
+config/      16×16 rules and training configuration
+cpp/         C++20 acceleration kernels
+docs/        Rules, complexity, architecture, and showcase figures
+game/        Board operations, termination, and scoring
+mcts/        PUCT, nodes, policies, and endgame search
+monitoring/  Interactive monitoring UI and server
+network/     Input features, residual network, policy, and losses
+native/      Python interface to the native extension
+scripts/     Checkpoint download and quickstart helpers
+tests/       Rules, search, network, training, and evaluation tests
+training/    Self-play, replay, training, and match evaluation
+utils/       Shared utilities
 ```
 
-## 研究状态与范围
+## Research status and scope
 
-这是一个研究型开源项目。已有实现支持训练和自对弈研究，但不宣称给出游戏理论最优策略、绝对人类棋力或跨规则泛化结论。评估中的 Elo 是项目内部相对尺度。除明确发布的五个检查点外，20×20 特征实验、其他训练产物、历史日志和本地运行目录不属于本次 16×16 公共发布范围。
+This is a research-oriented open-source project supporting training and self-play experiments. It makes no claim of game-theoretically optimal play, absolute human-level strength, or generalization across rulesets. Elo values are relative to this project's evaluation pool. Apart from the five published checkpoints, 20×20 experiments, other training artifacts, historical logs, and local run directories are outside the scope of this 16×16 release.
 
-## 许可
+## License
 
-本项目使用 MIT License。详见 [`LICENSE`](LICENSE)。
+Released under the [MIT License](LICENSE).
