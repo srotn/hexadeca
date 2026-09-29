@@ -32,7 +32,22 @@
 - 可选 C++20 Native 棋盘、计分、特征和搜索内核；
 - 自对弈、换色对战、置信区间和相对 Elo 评估。
 
-精确残局模块目前用于小规模剩余局面的 WDL 求解，不代表 16×16 已被完全求解。当前公开版本也不附带训练 checkpoint、Replay buffer 或实验运行目录。
+精确残局模块目前用于小规模剩余局面的 WDL 求解，不代表 16×16 已被完全求解。公开版本通过 Git LFS 提供下方展示使用的五个 16×16 checkpoint，便于直接体验；Replay buffer 和实验运行目录不随仓库发布。
+
+## 快速体验：无需重新训练
+
+安装 Git LFS、Python 3.11–3.13 和 C++20 编译工具后，在 POSIX shell（Windows 可用 Git Bash）中运行：
+
+```bash
+git clone https://github.com/srotn/hexadeca.git
+cd hexadeca
+bash scripts/download-checkpoints.sh
+bash scripts/quickstart.sh iteration-004520
+```
+
+服务启动后打开 **http://localhost:5555**。启动脚本会按需创建虚拟环境并安装依赖，加载检查点用于交互评估，不会自动开始训练。
+
+五个检查点为 `iteration-001360`、`iteration-001910`、`iteration-002880`、`iteration-003800`、`iteration-004520`，权重及原始训练状态合计约 **191 MB**。环境要求、其他检查点/端口和故障排查见 [CHECKPOINTS.md](CHECKPOINTS.md)。
 
 ## Visual results
 
@@ -129,13 +144,16 @@ python -m pytest
 
 ```text
 benchmark/   可复现的规则、网络、搜索、自对弈和训练 benchmark
+checkpoints/ 五个通过 Git LFS 发布的 16×16 检查点 bundle
 config/      16×16 规则和训练配置
 cpp/         可选 C++20 加速实现
 docs/        规则、复杂度和架构说明
 game/        棋盘、终局和计分
 mcts/        PUCT、节点、策略和残局搜索
+monitoring/  交互式监控 UI 与服务
 network/     输入特征、残差网络、策略与损失
 native/      Native 扩展的 Python 接口
+scripts/     检查点下载与快速启动
 tests/       规则、搜索、网络、训练和评估测试
 training/    自对弈、Replay、训练和对战评估
 utils/       通用工具
@@ -143,7 +161,7 @@ utils/       通用工具
 
 ## 研究状态与范围
 
-这是一个研究型开源项目。已有实现支持训练和自对弈研究，但不宣称给出游戏理论最优策略、绝对人类棋力或跨规则泛化结论。评估中的 Elo 是项目内部相对尺度。20×20 特征实验、训练产物、历史日志和本地运行目录不属于本次 16×16 公共发布范围。
+这是一个研究型开源项目。已有实现支持训练和自对弈研究，但不宣称给出游戏理论最优策略、绝对人类棋力或跨规则泛化结论。评估中的 Elo 是项目内部相对尺度。除明确发布的五个检查点外，20×20 特征实验、其他训练产物、历史日志和本地运行目录不属于本次 16×16 公共发布范围。
 
 ## 许可
 

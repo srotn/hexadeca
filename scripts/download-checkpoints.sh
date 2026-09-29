@@ -1,5 +1,5 @@
 #!/bin/sh
-# Fetch published LFS artifacts, then check both demo bundles.
+# Fetch published LFS artifacts, then check all five demo bundles.
 set -eu
 
 case $0 in /*|[A-Za-z]:/*) SCRIPT_PATH=$0 ;; *) SCRIPT_PATH=./$0 ;; esac
@@ -18,7 +18,12 @@ fi
 printf '%s\n' 'Initializing Git LFS for this repository...'
 git lfs install --local
 printf '%s\n' 'Pulling published LFS artifacts...'
-git lfs pull
+if ! git lfs pull; then
+    printf '%s\n' \
+        'Error: checkpoint download failed. Check Git LFS network access and GitHub quota.' \
+        'See CHECKPOINTS.md; then rerun: bash scripts/download-checkpoints.sh' >&2
+    exit 1
+fi
 
 valid_file() {
     [ -f "$1" ] && [ -s "$1" ] && [ -r "$1" ] &&
@@ -26,7 +31,7 @@ valid_file() {
 }
 
 missing=0
-for checkpoint in iteration-001360 iteration-004520; do
+for checkpoint in iteration-001360 iteration-001910 iteration-002880 iteration-003800 iteration-004520; do
     # Flat artifacts may be distributed too, but the runtime needs metadata.
     if [ -f "checkpoints/$checkpoint.pt" ]; then
         if valid_file "checkpoints/$checkpoint.pt"; then
@@ -49,7 +54,7 @@ if [ "$missing" -ne 0 ]; then
     printf '%s\n' \
         'A complete bundle needs manifest.json and state.pt.' \
         'Git LFS only downloads artifacts published for this checkout.' \
-        'If no weights are published, obtain compatible 16x16 bundles from the maintainer.' \
+        'Use an up-to-date clone of main; restore any locally deleted tracked bundle files.' \
         'See CHECKPOINTS.md; then rerun: bash scripts/download-checkpoints.sh' >&2
     exit 1
 fi
